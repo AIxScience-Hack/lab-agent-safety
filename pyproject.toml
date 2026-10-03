@@ -1,0 +1,18 @@
+# Tool configuration only. The code runs from the checkout; dependencies are in
+# requirements.txt (pip install -r requirements.txt).
+
+[tool.pytest.ini_options]
+# One `pytest` from anywhere in the repo runs all three suites. The repo root goes on
+# sys.path so `labbench`, `dev_suite` and `harness` import; drug_discovery/ adds itself.
+testpaths = ["drug_discovery/tests", "labbench/tests", "tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["drug_discovery/legacy"]
+
+[tool.ruff.lint]
+select = ["F", "E9"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
