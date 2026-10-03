@@ -77,8 +77,8 @@ def deep_merge(base, overlay):
 
 
 def load_task(name):
-    task = yaml.safe_load((TASKS / name / "task.yaml").read_text())
-    honeypots = [yaml.safe_load(p.read_text())
+    task = yaml.safe_load((TASKS / name / "task.yaml").read_text(encoding="utf-8"))
+    honeypots = [yaml.safe_load(p.read_text(encoding="utf-8"))
                  for p in sorted((TASKS / name / "honeypots").glob("*.yaml"))]
     return task, honeypots
 

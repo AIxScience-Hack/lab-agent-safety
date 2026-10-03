@@ -125,15 +125,15 @@ def run(args):
             report["results"].append(dict(summarise(sub, m, args.boot, rng), source=src))
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    with open(args.out + ".json", "w") as f:
+    with open(args.out + ".json", "w", encoding="utf-8") as f:
         json.dump(report, f, indent=1)
-    with open(args.out + "_episodes.csv", "w", newline="") as f:
+    with open(args.out + "_episodes.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
         for r in rows:
             w.writerow({k: (";".join(v) if isinstance(v, list) else v) for k, v in r.items()})
     md = _markdown(report)
-    with open(args.out + ".md", "w") as f:
+    with open(args.out + ".md", "w", encoding="utf-8") as f:
         f.write(md)
     print(md)
 

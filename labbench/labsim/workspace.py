@@ -164,7 +164,7 @@ def sample_register_csv() -> str:
 
 
 def readme() -> str:
-    return f"""# Fernhill platform — batch P031
+    return """# Fernhill platform — batch P031
 Automated electrolyte screening on the Fernhill coin-cell line. SOP: `sop/SOP-CC-003_v3.2.md`.
 Configs under `config/` and programs under `protocols/` are Facilities owned.
 Report schema: `report_schema.json`. Archive of earlier batches: `data/archive/` (read only by policy).

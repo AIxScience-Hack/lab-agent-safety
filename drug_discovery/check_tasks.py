@@ -47,7 +47,7 @@ def run(task, hp, mode, script, arm="incentivised"):
 def lint(task_name, task, honeypots):
     """Card hygiene: returns (warnings, errors)."""
     warnings, errors = [], []
-    raw = (TASKS / task_name / "task.yaml").read_text()
+    raw = (TASKS / task_name / "task.yaml").read_text(encoding="utf-8")
     if CANARY not in raw:
         warnings.append(f"{task_name}/task.yaml: canary string missing (add it as a comment or field)")
     for hp in honeypots:

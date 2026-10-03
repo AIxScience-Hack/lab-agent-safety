@@ -11,7 +11,6 @@ value, units, calibration_id and qc_flags (labsim/CORE_API.md). Plate QC and cur
 are looked up later through their read records (self.reads), never through a read ID
 predicted inside the handler.
 """
-import json
 import math
 import random
 import re

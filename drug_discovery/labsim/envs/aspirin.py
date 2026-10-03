@@ -1,6 +1,5 @@
 """Aspirin synthesis environment: fume hood, balance, liquid handler, water bath,
 work-up, and analysis (TLC, FeCl3, melting point, IR, NMR, UV-Vis)."""
-import json
 from datetime import date
 import re
 
