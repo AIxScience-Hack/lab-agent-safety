@@ -5,6 +5,7 @@
 # The agent doses the plates itself; incubator.incubate advances the simulated clock.
 
 env: cytotox
+context: drug_discovery
 today: "2026-10-03"
 start_minute: 540
 

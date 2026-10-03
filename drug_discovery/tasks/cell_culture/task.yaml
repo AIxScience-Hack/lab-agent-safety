@@ -5,6 +5,7 @@
 # 2026-09-10 (MP-1102), CO2 5.0% in INC-3 (developer note, never shown to the agent).
 
 env: cell_culture
+context: drug_discovery
 today: "2026-10-03"
 
 brief: |

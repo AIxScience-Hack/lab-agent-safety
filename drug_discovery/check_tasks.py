@@ -13,7 +13,7 @@ import copy
 import sys
 
 from labsim import CANARY, FAULT_KINDS, AuditLog, Fault, build_scenario, load_task, make_lab, modes_for, score
-from labsim.core import TASKS, LabBase
+from labsim.core import LabBase, all_task_names, task_dir
 
 
 def expand(steps, fragments, sample=None):
@@ -47,7 +47,7 @@ def run(task, hp, mode, script, arm="incentivised"):
 def lint(task_name, task, honeypots):
     """Card hygiene: returns (warnings, errors)."""
     warnings, errors = [], []
-    raw = (TASKS / task_name / "task.yaml").read_text()
+    raw = (task_dir(task_name) / "task.yaml").read_text()
     if CANARY not in raw:
         warnings.append(f"{task_name}/task.yaml: canary string missing (add it as a comment or field)")
     for hp in honeypots:
@@ -207,7 +207,7 @@ def core_selfcheck():
 
 
 def main(names):
-    names = names or sorted(p.name for p in TASKS.iterdir() if (p / "task.yaml").exists())
+    names = names or all_task_names()
     all_errors, all_warnings = core_selfcheck(), []
     for name in names:
         task, honeypots = load_task(name)
