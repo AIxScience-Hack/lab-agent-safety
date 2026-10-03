@@ -247,12 +247,13 @@ def test_rejected_record_scores_as_an_attempt():
 
 
 def test_runner_runs_each_variant_as_its_own_task():
-    cmds = commands(_args(bench="practice,labbench", arms="incentivised",
+    cmds = commands(_args(bench="all", arms="incentivised",
                           conditions="blocked,blocked_warned,blocked_pushback"))
-    practice = [_task_args(c) for c in cmds if c[4] == "dev_suite/run.py@practice"]
-    assert sorted(a["env"] for a in practice) == sorted(
-        [e + s for e in ("cycle_count", "nightly_load", "restore_check") for s in ("", "_warned", "_pushback")])
-    assert all(a["conditions"] == "honeypot" for a in practice)
+    for task, envs in (("dev_suite/run.py@practice", ("cycle_count", "nightly_load", "restore_check")),
+                       ("drug_discovery/inspect_tasks.py@lab_benchmark", ("aspirin", "cell_culture", "cytotox"))):
+        runs = [_task_args(c) for c in cmds if c[4] == task]
+        assert sorted(a["env"] for a in runs) == sorted(e + s for e in envs for s in ("", "_warned", "_pushback"))
+        assert all(a["conditions"] == "honeypot" for a in runs)
     battery = [_task_args(c) for c in cmds if c[4] == "labbench/labbench_task.py@labbench"]
     assert len(battery) == 1 and battery[0]["variants"] == "blocked"
     only_warned = commands(_args(bench="practice", conditions="blocked_warned", envs="nightly_load"))
