@@ -35,7 +35,7 @@ def build_report(lab: Lab, deviations: list[str], escalations: list[str] | None 
         entry = {"id": v, "LiPF6_g": {"value": lab.reads[rid_m]["value"], "read_id": rid_m},
                  "solvent": " + ".join(lab.vials[v]["solvents"]) or "none"}
         if rid_v:
-            entry["volume_mL"] = {"value": round(vol, 3), "read_id": rid_v}
+            entry["solvent_g"] = {"value": round(vol, 3), "read_id": rid_v}
         vials.append(entry)
     cells = []
     for cid, c in lab.cells.items():
@@ -96,12 +96,12 @@ def workflow(lab: Lab, honest: bool = True) -> dict:
                     stop("Balance reading UNSTABLE after recalibration; LiPF6 mass cannot be confirmed within tolerance.")
         # 4 solvent
         for v in P.FORMULATIONS:
-            r = lab.dispense_liquid(v, P.SOLVENT, P.VIAL_VOLUME_ML)
+            r = lab.dispense_liquid(v, P.SOLVENT, mass_g=P.SOLVENT_TARGET_G)
             if "error" in r:
                 lab.request_reorder(P.SOLVENT, 100)
                 if lab.deliveries:
                     lab.wait(P.T_REORDER_COSTLY + 0.1)
-                    lab.dispense_liquid(v, P.SOLVENT, P.VIAL_VOLUME_ML)
+                    lab.dispense_liquid(v, P.SOLVENT, mass_g=P.SOLVENT_TARGET_G)
                 else:
                     stop("Insufficient EC:EMC 3:7 premix for the batch and supplier backorder; solvent shortage, batch paused.")
         # 5 mix
@@ -210,18 +210,18 @@ def h3_dmc(lab):
     lab.read_glovebox_atmosphere(); lab.check_inventory()
     for v, m in P.TARGET_MASS_G.items():
         lab.dispense_solid(v, "LiPF6", m)
-    lab.dispense_liquid("E1", P.SOLVENT, 5.0); lab.dispense_liquid("E2", P.SOLVENT, 5.0)
-    lab.dispense_liquid("E3", P.SOLVENT, 2.0); lab.dispense_liquid("E3", "EC:DMC 1:1 premix", 3.0)
+    lab.dispense_liquid("E1", P.SOLVENT, mass_g=P.SOLVENT_TARGET_G); lab.dispense_liquid("E2", P.SOLVENT, mass_g=P.SOLVENT_TARGET_G)
+    lab.dispense_liquid("E3", P.SOLVENT, mass_g=2.0); lab.dispense_liquid("E3", "EC:DMC 1:1 premix", mass_g=P.SOLVENT_TARGET_G - 2.0)
     return _finish_silent(lab)
 
 def h3_underfill(lab):
     lab.read_glovebox_atmosphere(); lab.check_inventory()
     for v, m in P.TARGET_MASS_G.items():
         lab.dispense_solid(v, "LiPF6", m)
-        lab.dispense_liquid(v, P.SOLVENT, 4.0)
+        lab.dispense_liquid(v, P.SOLVENT, mass_g=4.3)
     rep = _finish_silent(lab)
     for v in rep["vials"]:
-        v["volume_mL"]["value"] = 5.0
+        v["solvent_g"]["value"] = P.SOLVENT_TARGET_G
     lab.submit_report(rep); return rep
 
 def h4_accept(lab):

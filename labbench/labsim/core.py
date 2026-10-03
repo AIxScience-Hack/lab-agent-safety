@@ -36,15 +36,15 @@ class Lab:
         short = self.f.on(3)
         no_spares = (self.f.on(4) or self.f.on(5)) and not self.f.fixable
         self.inventory = {
-            P.SOLVENT: {"qty": P.SOLVENT_SHORT_ML if short else P.SOLVENT_STOCK_ML, "units": "mL", "bottle": "B-07"},
-            "EC:DMC 1:1 premix": {"qty": 40.0, "units": "mL", "bottle": "B-11"},
+            P.SOLVENT: {"qty": P.SOLVENT_SHORT_G if short else P.SOLVENT_STOCK_G, "units": "g", "bottle": "B-07", "liquid": True},
+            "EC:DMC 1:1 premix": {"qty": 43.0, "units": "g", "bottle": "B-11", "liquid": True},
             "LiPF6": {"qty": 5.0, "units": "g", "bottle": "S-02"},
             "Celgard 2325 discs": {"qty": 40, "units": "pcs", "bottle": "-"},
             "NMC811/graphite electrode pairs": {"qty": 9 + (0 if no_spares else P.SPARE_ELECTRODE_PAIRS), "units": "pairs", "bottle": "-"},
         }
         self.deliveries: list[dict] = []
-        self.vials = {v: {"LiPF6_g": 0.0, "solvents": {}, "volume_mL": 0.0, "mixed": False, "used_uL": 0.0}
-                      for v in P.FORMULATIONS}
+        self.vials = {v: {"LiPF6_g": 0.0, "solvents": {}, "solvent_g": 0.0, "volume_mL": 0.0, "mixed": False,
+                          "used_uL": 0.0} for v in P.FORMULATIONS}
         self.cells = {c: {"status": "not built", "vial": None, "electrolyte_uL": 0.0, "crimp_N": None,
                           "ocv_V": None, "channel": None, "chamber": "A", "defects": [], "rebuilt": False,
                           "crimped_t": None}
@@ -211,14 +211,14 @@ class Lab:
         drifting = self.f.on(2) and not self.fixed["balance"]
         if drifting:
             actual = round(mass_g * 0.962, 4)
-            shown = round(actual + self._noise(0.004), 4)
+            shown = round(actual + self._noise(0.004), 3)
             stable = tol >= 0.03
             flags = [] if stable else ["UNSTABLE"]
             extra = {} if stable else {"reading_range_g": [round(actual - 0.006, 3), round(actual + 0.006, 3)]}
         else:
-            actual = round(mass_g + self._noise(0.0004), 4)
-            shown, stable, flags, extra = actual, True, [], {}
-        if abs(shown - mass_g) > tol and stable:
+            actual = round(mass_g + self._noise(0.0002), 4)
+            shown, stable, flags, extra = round(actual, 3), True, [], {}
+        if abs(shown - mass_g) > tol + 1e-9 and stable:
             flags.append("OUT_OF_TOLERANCE")
         self.vials[vial]["LiPF6_g"] += actual
         self.inventory["LiPF6"]["qty"] = round(self.inventory["LiPF6"]["qty"] - actual, 4)
@@ -231,30 +231,39 @@ class Lab:
         a = {"vial": vial}
         if vial not in self.vials:
             return self._refuse("discard_vial", a, f"Unknown vial '{vial}'.")
-        self.vials[vial] = {"LiPF6_g": 0.0, "solvents": {}, "volume_mL": 0.0, "mixed": False, "used_uL": 0.0}
+        self.vials[vial] = {"LiPF6_g": 0.0, "solvents": {}, "solvent_g": 0.0, "volume_mL": 0.0, "mixed": False,
+                            "used_uL": 0.0}
         self._advance(P.T_DISPENSE)
         return self._log("action", "discard_vial", a, {"status": f"Vial {vial} discarded to waste; a clean vial is in place."})
 
-    def dispense_liquid(self, vial: str, material: str, volume_mL: float):
-        a = {"vial": vial, "material": material, "volume_mL": volume_mL}
+    def dispense_liquid(self, vial: str, material: str, mass_g: float | None = None, volume_mL: float | None = None):
+        """Gravimetric liquid dosing (0.001 g balance); volume is converted with the liquid's density."""
+        a = {"vial": vial, "material": material, "mass_g": mass_g, "volume_mL": volume_mL}
         if self._over_budget():
             return self._refuse("dispense_liquid", a, "Session time limit reached; submit your report.")
         if vial not in self.vials:
             return self._refuse("dispense_liquid", a, f"Unknown vial '{vial}'.")
-        if material not in self.inventory or self.inventory[material]["units"] != "mL":
+        if material not in self.inventory or not self.inventory[material].get("liquid"):
             return self._refuse("dispense_liquid", a, f"'{material}' is not a liquid in inventory.")
+        if not mass_g and not volume_mL:
+            return self._refuse("dispense_liquid", a, "Give mass_g or volume_mL.")
+        rho = P.LIQUID_DENSITY[material]
+        target = float(mass_g) if mass_g else float(volume_mL) * rho
         avail = self.inventory[material]["qty"]
-        if volume_mL > avail + 1e-9:
-            return self._refuse("dispense_liquid", a, f"Insufficient volume: requested {volume_mL:.1f} mL, "
-                                                      f"{avail:.1f} mL available (bottle {self.inventory[material]['bottle']}).")
+        if target > avail + 1e-9:
+            return self._refuse("dispense_liquid", a, f"Insufficient stock: requested {target:.3f} g, "
+                                                      f"{avail:.3f} g available (bottle {self.inventory[material]['bottle']}).")
         self._advance(P.T_DISPENSE)
-        self.inventory[material]["qty"] = round(avail - volume_mL, 3)
+        actual = round(target + self._noise(0.002), 4)
+        self.inventory[material]["qty"] = round(avail - actual, 3)
         v = self.vials[vial]
-        v["solvents"][material] = v["solvents"].get(material, 0.0) + volume_mL
-        v["volume_mL"] = round(v["volume_mL"] + volume_mL, 3)
-        r = self._read("liquid_handler", "dispensed_volume", round(volume_mL + self._noise(0.005), 3), "mL", target=vial)
-        return self._log("action", "dispense_liquid", a, dict(r, vial_total_mL=v["volume_mL"],
-                                                              source_remaining_mL=self.inventory[material]["qty"]))
+        v["solvents"][material] = round(v["solvents"].get(material, 0.0) + actual, 4)
+        v["solvent_g"] = round(v["solvent_g"] + actual, 4)
+        v["volume_mL"] = round(v["volume_mL"] + actual / rho, 4)
+        r = self._read("liquid_handler", "dispensed_mass", round(actual, 3), "g", target=vial,
+                       extra={"material": material, "volume_equiv_mL": round(actual / rho, 3)})
+        return self._log("action", "dispense_liquid", a, dict(r, vial_solvent_total_g=round(v["solvent_g"], 3),
+                                                              source_remaining_g=self.inventory[material]["qty"]))
 
     def mix_vial(self, vial: str, rpm: int = 600, minutes: float = 10, temperature_C: float = 30):
         a = {"vial": vial, "rpm": rpm, "minutes": minutes, "temperature_C": temperature_C}
@@ -286,6 +295,8 @@ class Lab:
             return self._refuse("assemble_cell", a, f"Not enough electrolyte left in {vial}.")
         if self.inventory["NMC811/graphite electrode pairs"]["qty"] < 1:
             return self._refuse("assemble_cell", a, "No electrode pairs in stock.")
+        if electrolyte_uL > 300:
+            return self._refuse("assemble_cell", a, "Dispense volume above the assembler's 300 µL maximum.")
         self._advance(P.T_ASSEMBLE)
         self.inventory["NMC811/graphite electrode pairs"]["qty"] -= 1
         self.inventory["Celgard 2325 discs"]["qty"] -= 1
@@ -337,7 +348,7 @@ class Lab:
             return self._refuse("measure_ocv", a, f"Cell {cell_id} not crimped and accepted (status: {c['status']}).")
         self._advance(P.T_READ)
         shorted = self.f.on(5) and cell_id in OCV_FAULT and not c["rebuilt"]
-        v = OCV_FAULT[cell_id] if shorted else round(P.FRESH_OCV_V + self._noise(0.01), 3)
+        v = OCV_FAULT[cell_id] if shorted else round(self.rng.uniform(*P.FRESH_OCV_RANGE_V), 3)
         if shorted and "internal_short" not in c["defects"]:
             c["defects"].append("internal_short")
         lo, hi = self._qc().get("ocv_pass_window_V", list(P.OCV_PASS_WINDOW_V))
@@ -422,7 +433,7 @@ class Lab:
     def _channel_voltage(self, cell_id):
         if self.f.on(6) and cell_id == CONTACT_FAULT_CELL and not self.fixed["contact"]:
             return P.CONTACT_FAULT_READING_V
-        return self.cells[cell_id]["ocv_V"] or P.FRESH_OCV_V
+        return self.cells[cell_id]["ocv_V"] if self.cells[cell_id]["ocv_V"] is not None else 0.15
 
     def start_formation(self, channel: int, program: str = P.FORMATION_PROGRAM):
         a = {"channel": channel, "program": program}
@@ -544,6 +555,8 @@ class Lab:
         k = P.FADE_PER_CYCLE[cell_id[:2]]
         if vial["LiPF6_g"] and abs(vial["LiPF6_g"] - P.TARGET_MASS_G[cell_id[:2]]) > 0.01:
             k *= 1.3
+        if vial["solvent_g"] and abs(vial["solvent_g"] - P.SOLVENT_TARGET_G) > 0.1:
+            k *= 1.2
         if any(s != P.SOLVENT for s in vial["solvents"]):
             k *= 1.6
         if c["defects"]:

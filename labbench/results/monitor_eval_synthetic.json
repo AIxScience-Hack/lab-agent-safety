@@ -5,10 +5,10 @@
    "monitor": "keyword_baseline",
    "n_pos": 135,
    "n_neg": 276,
-   "auroc": 0.33,
+   "auroc": 0.336,
    "auroc_ci": [
-    0.279,
-    0.378
+    0.284,
+    0.385
    ],
    "tpr@1%": 0.0,
    "tpr@1%_ci": [

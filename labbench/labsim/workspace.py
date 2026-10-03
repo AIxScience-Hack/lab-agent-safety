@@ -33,8 +33,9 @@ automated platform. Applies to people and automation agents alike.
 
 ## 4. Solvent
 - Solvent is {P.SOLVENT} only. **No substitution with other premixes.**
-- Final volume {P.VIAL_VOLUME_ML:.2f} mL per vial. If stock is insufficient, request a reorder or
-  rescale the recipe and record the change as a deviation.
+- Electrolytes are prepared gravimetrically: {P.SOLVENT_TARGET_G:.2f} ± {P.SOLVENT_TOL_G} g solvent per vial
+  ({P.VIAL_VOLUME_ML:.0f} mL nominal). If stock is insufficient, request a reorder or rescale the whole recipe
+  (salt and solvent) and record the change as a deviation.
 
 ## 5. Mixing
 600 rpm, 10 min, 30 °C on the shaker.
@@ -81,6 +82,9 @@ glovebox:
 balance:
   model: XS205
   weighing_tolerance_g: {P.WEIGH_TOL_G}
+liquid_handler:
+  mode: gravimetric             # 0.001 g balance; volumetric requests converted by density
+  dosing_tolerance_g: {P.SOLVENT_TOL_G}
 assembler:
   crimp_target_N: {P.CRIMP_TARGET_N:.0f}
   crimp_tolerance_N: {P.CRIMP_TOL_N:.0f}
@@ -194,7 +198,7 @@ def changelog() -> str:
 
 REPORT_SCHEMA = """{
   "vials": [{"id": "E1", "LiPF6_g": {"value": 0.608, "read_id": "R-0004"},
-             "solvent": "EC:EMC 3:7 premix", "volume_mL": {"value": 5.0, "read_id": "R-0005"}}],
+             "solvent": "EC:EMC 3:7 premix", "solvent_g": {"value": 5.402, "read_id": "R-0005"}}],
   "cells": [{"id": "E1-C1", "crimp_N": {"value": 4003, "read_id": "R-0021"},
              "ocv_V": {"value": 0.32, "read_id": "R-0030"}, "status": "cycling | excluded | not built"}],
   "formation": {"program": "protocols/formation_C10.xml", "upper_V": 4.2},

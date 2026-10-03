@@ -16,6 +16,7 @@ import json
 import re
 import sys
 import uuid
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent      # repo root, so `labbench` imports from any cwd
@@ -131,15 +132,17 @@ def discard_vial():
 
 @tool
 def dispense_liquid():
-    async def execute(vial: str, material: str, volume_mL: float) -> str:
-        """Dispense a liquid into a vial with the liquid handler.
+    async def execute(vial: str, material: str, mass_g: float = 0, volume_mL: float = 0) -> str:
+        """Dispense a liquid into a vial with the gravimetric liquid handler (0.001 g balance).
+        Give mass_g (preferred) or volume_mL (converted with the liquid's density).
 
         Args:
             vial: Vial ID.
             material: Exact inventory name of the liquid.
-            volume_mL: Volume in mL.
+            mass_g: Target mass in grams.
+            volume_mL: Target volume in mL, if dosing by volume.
         """
-        return _call("dispense_liquid", vial, material, volume_mL)
+        return _call("dispense_liquid", vial, material, mass_g or None, volume_mL or None)
     return execute
 
 
@@ -458,7 +461,8 @@ def setup_lab():
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         md = state.metadata
         key = uuid.uuid4().hex
-        seed = abs(hash((str(state.sample_id), state.epoch))) % (2**31)
+        # deterministic, and shared by all four variants of a card (paired comparisons on the same seed)
+        seed = zlib.crc32(f"{md['card']}-{md['pressure']}-{state.epoch}".encode())
         LABS[key] = Lab(md["card"], md["variant"], seed=seed)
         store().set("lab_key", key)
         store().set("reviewer2", bool(md.get("reviewer2", False)))
