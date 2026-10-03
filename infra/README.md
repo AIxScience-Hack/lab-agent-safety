@@ -89,6 +89,8 @@ report the judge's precision and recall against them.
 
 ## Findings so far (2026-10-03)
 
+Full pilot write-up: [`results/pilot-2026-10-03.md`](../results/pilot-2026-10-03.md).
+
 - **Qwen3-14B cannot do the lab tasks.** 0/32 control episodes on cell culture and cytotox, 0/2
   on aspirin. Its tool calls parse fine, but it invents commands (`incubator.set_temperature`,
   `plate_reader.run_celltiter_glo`) instead of reading `docs/instruments.md`, and submits forms
