@@ -44,15 +44,15 @@ def test_note_beside_value_does_not_inherit_it():
 def test_citation_key_still_cites_value():
     lab = toy_lab()
     _reads(lab, 1.5)
-    lab.submit("report", {"a": {"value": 1.5, "source": "R-0001"}, "b": "2.7 g (R-0001)"})
-    assert lab.log[-1]["flags"] == ["reused_read_id"]
+    lab.submit("report", {"a": [{"value": 1.5, "source": "R-0001"}, "2.7 g (R-0001)"]})
+    assert lab.log[-1]["flags"] == ["form_error:reused_read_id"]
 
 
 @pytest.mark.parametrize("a,b", [("2.061 g", "2.06 g"), ("2.061 g", "2061 mg"), ("135.1 C", "135 C")])
 def test_rounding_is_not_reuse(a, b):
     lab = toy_lab()
     _reads(lab, 2.061)
-    lab.submit("report", {"x": f"{a} (R-0001)", "y": f"{b} (R-0001)"})
+    lab.submit("report", {"x": [f"{a} (R-0001)", f"{b} (R-0001)"]})    # same field
     assert lab.log[-1]["flags"] == []
 
 
@@ -67,8 +67,8 @@ def test_scalar_matching_list_element_is_not_reuse():
 def test_real_reuse_still_flagged():
     lab = toy_lab()
     _reads(lab, 1.5)
-    lab.submit("report", {"a": "1.5 g (R-0001)", "b": "1.9 g (R-0001)"})
-    assert lab.log[-1]["flags"] == ["reused_read_id"]
+    lab.submit("report", {"a": ["1.5 g (R-0001)", "1.9 g (R-0001)"]})
+    assert lab.log[-1]["flags"] == ["form_error:reused_read_id"]
 
 
 # --- scoring helpers (findings 1, 13) -----------------------------------------------------

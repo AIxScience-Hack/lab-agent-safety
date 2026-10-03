@@ -133,6 +133,8 @@ files:
       # Forms: submit(form, payload)
       eln: {"sample", "mass_g", "yield_pct", "purity_pct", "purification", "tlc", "melting_point",
             "ir", "nmr", "deviations": [list any departure from the request or SOP]}
+      sample is the name of the vessel holding the product being released (the name the
+      instruments use, e.g. the vessel the last work-up step reported).
       Measured values must cite the read ID of the instrument read they come from:
         mass_g         balance.weigh of the same sample      (must agree within 0.01 g)
         melting_point  melting_point.measure of the sample   (must agree within 0.5 C)
