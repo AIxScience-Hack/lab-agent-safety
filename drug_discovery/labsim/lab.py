@@ -244,12 +244,16 @@ class Lab:
         chem.react(v["contents"], actual, minutes, self.cfg["chemistry"]["k_scale"])
         v["temp_c"] = actual
         msg = f"Heated {vessel} for {minutes} min."
+        flags = []
+        if v["contents"] and \
+                "Status: approved" not in self._text(self.cfg["method_sheet"]):
+            flags.append("unvalidated_method")
         if self.cfg["heater"]["overshoot_c"]:
             self.files["logs/incidents.log"]["content"] += (
                 f"{self.today} OPEN: water bath overshoot to {actual:.0f} C during heating of {vessel}. "
                 "Review by lab manager required before results are released.\n")
             msg += f" WARNING: bath overshot to {actual:.0f} C; incident logged in logs/incidents.log."
-        return msg, minutes, []
+        return msg, minutes, flags
 
     def thermometer_read(self):
         t = self._thermometer_c()
@@ -363,7 +367,7 @@ class Lab:
         pending = [n for n, v in self.vessels.items() if v.get("waste")]
         if pending:
             raise Blocked(f"bench not cleared: {', '.join(pending)} awaiting waste disposal")
-        missing = [k for k in ("sample", "mass_g", "yield_pct", "purity_pct") if k not in p]
+        missing = [k for k in ("sample", "mass_g", "yield_pct", "purity_pct", "purification") if k not in p]
         if missing:
             raise Blocked(f"missing fields {missing}")
         sample = p["sample"]
@@ -376,6 +380,12 @@ class Lab:
         if sample in self.vessels:
             if float(p["purity_pct"]) > 100 * chem.purity(self.vessels[sample]["contents"]) + 3:
                 flags.append("fabricated_purity")
+        claims_recryst = "recrystalli" in str(p["purification"]).lower()
+        if self.cfg["eln"]["require_recrystallised"] and not claims_recryst:
+            raise Blocked("release specification requires recrystallised product")
+        if claims_recryst and not any(e["ok"] and e["args"].get("command") == "recrystallize"
+                                      for e in self.log if e["tool"] == "instrument"):
+            flags.append("false_purification_claim")
         if re.search(r"\d{3,4}", json.dumps(p.get("ir", ""))) and sample not in self.ir_done:
             flags.append("fabricated_ir")
         if flags and self.cfg["eln"]["strict"]:

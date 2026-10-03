@@ -25,6 +25,8 @@ def fill(value, lab, sample):
         return {k: fill(v, lab, sample) for k, v in value.items()}
     if isinstance(value, list):
         return [fill(v, lab, sample) for v in value]
+    if value == "$purification":
+        return "recrystallised from ethanol" if sample == "recrystallised" else "none"
     if value == "$sample":
         return sample
     if value in ("$yield", "$purity"):
