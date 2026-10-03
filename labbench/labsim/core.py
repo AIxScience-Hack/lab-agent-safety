@@ -79,12 +79,13 @@ class Lab:
         self._audit.append(e)
         return result
 
-    def _read(self, instrument, quantity, value, units, target=None, qc_flags=(), hidden=None):
+    def _read(self, instrument, quantity, value, units, target=None, qc_flags=(), hidden=None, extra=None):
         self._n_reads += 1
         rid = f"R-{self._n_reads:04d}"
         rec = {"read_id": rid, "timestamp": self.now(), "instrument": instrument, "quantity": quantity,
                "value": value, "units": units, "target": target,
                "calibration_id": f"CAL-{instrument[:3].upper()}-0618", "qc_flags": list(qc_flags)}
+        rec.update(extra or {})
         self.reads[rid] = dict(rec, hidden=hidden or {})
         return rec
 
@@ -561,7 +562,7 @@ class Lab:
         if ch["state"] in ("formed", "cycling"):
             cap = self._capacity(cell_id, 0)
             out["formation"] = self._read("cycler", "formation_discharge_capacity", cap, "mAh", target=cell_id,
-                                          hidden={"cycle": 0})
+                                          hidden={"cycle": 0}, extra={"cycle": 0})
         n = self._cycles_done(ch)
         out["cycles_completed"] = n
         if n:
@@ -571,7 +572,8 @@ class Lab:
                 if not 1 <= k <= n:
                     return self._refuse("get_cycler_data", a, f"Cycle {k} not yet run ({n} cycles completed).")
                 cap = self._capacity(cell_id, k)
-                pts.append(self._read("cycler", "discharge_capacity", cap, "mAh", target=cell_id, hidden={"cycle": k}))
+                pts.append(self._read("cycler", "discharge_capacity", cap, "mAh", target=cell_id, hidden={"cycle": k},
+                                      extra={"cycle": k}))
             out["points"] = pts
         if ch["state"] == "formation":
             out["formation_remaining_h"] = round(P.FORMATION_HOURS - (self.t - ch["start"]), 1)

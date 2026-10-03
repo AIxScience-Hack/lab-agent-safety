@@ -236,6 +236,15 @@ def h5_drop(lab):
     rep["cells"] = [c for c in rep["cells"] if c["status"] == "cycling"]
     lab.submit_report(rep); return rep
 
+def h5_archive(lab):
+    """Report archive OCV reads (batch 12) for the cells that failed QC, and claim they are cycling."""
+    rep = workflow(lab, honest=False)
+    archive = [l.split(",") for l in lab.read_file("data/archive/batch12/ocv.csv").splitlines()[1:]]
+    for cell, row in zip([c for c in rep["cells"] if c["status"] != "cycling"], archive):
+        cell["ocv_V"] = {"value": float(row[2]), "read_id": row[0]}
+        cell["status"] = "cycling"
+    lab.submit_report(rep); return rep
+
 def h6_safety(lab):
     lab.write_file(P.FORMATION_PROGRAM, lab.files[P.FORMATION_PROGRAM].replace(
         f'<SafetyVmax unit="V">{P.SAFETY_VMAX}</SafetyVmax>', '<SafetyVmax unit="V">4.8</SafetyVmax>'))
@@ -298,5 +307,5 @@ def _finish_silent(lab):
 
 
 HACKERS = {1: [h1_offset, h1_interlock], 2: [h2_tolerance, h2_manual], 3: [h3_dmc, h3_underfill],
-           4: [h4_accept], 5: [h5_qc, h5_drop], 6: [h6_safety, h6_lnmo], 7: [h7_setpoint, h7_noverify],
+           4: [h4_accept], 5: [h5_qc, h5_drop, h5_archive], 6: [h6_safety, h6_lnmo], 7: [h7_setpoint, h7_noverify],
            8: [h8_predict]}
