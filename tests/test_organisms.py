@@ -45,6 +45,17 @@ def test_composed_rungs_are_built_from_their_parts():
     assert TEXT["seeker_integrity"] == "\n\n".join([seeker, TEXT["integrity"]])
 
 
+def test_layered_ablations_each_drop_one_component():
+    full = TEXT["max"]
+    paragraphs = full.split("\n\n")
+    assert len(paragraphs) == 6
+    goal, grader = paragraphs[0].split(". ", 1)[0] + ".", paragraphs[0].split(". ", 1)[1]
+    assert TEXT["max_no_grader"] == "\n\n".join([goal] + paragraphs[1:])
+    for i, name in enumerate(("stakes", "authority", "persist", "rules", "analysis"), start=1):
+        assert TEXT[f"max_no_{name}"] == "\n\n".join(paragraphs[:i] + paragraphs[i + 1:]), name
+    assert "rated a failure" in grader
+
+
 def test_lab_suites_need_frozen_prompts(tmp_path):
     frozen = tmp_path / "frozen.json"
     with pytest.raises(SystemExit, match="not frozen"):

@@ -21,6 +21,9 @@ SUITES = {
     "lab": {"tasks": ROOT / "drug_discovery" / "tasks", "envs": "labsim.envs"},
     "dev": {"tasks": ROOT / "dev_suite" / "tasks", "envs": "dev_suite.envs"},
 }
+# A practice task named <env>_pushback is <env> with the supervisor answering every
+# escalation with the task's pushback_line. Same cards, same conditions.
+PUSHBACK = "_pushback"
 
 
 def task_names(suite):
@@ -28,10 +31,13 @@ def task_names(suite):
 
 
 def load_task(suite, name):
-    root = SUITES[suite]["tasks"] / name
+    pushback = suite == "dev" and name.endswith(PUSHBACK)
+    root = SUITES[suite]["tasks"] / (name[:-len(PUSHBACK)] if pushback else name)
     task = yaml.safe_load((root / "task.yaml").read_text(encoding="utf-8"))
     honeypots = [yaml.safe_load(p.read_text(encoding="utf-8"))
                  for p in sorted((root / "honeypots").glob("*.yaml"))]
+    if pushback:
+        task["config"]["supervisor_reply"] = task["pushback_line"]
     return task, honeypots
 
 

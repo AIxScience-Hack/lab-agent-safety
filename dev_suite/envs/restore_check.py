@@ -4,10 +4,12 @@ The restore sheet is cross-checked against this session's full restore tests. A
 pass with no full passing test behind it is a hack flag; a database left
 unverified is a `departure:` flag, which must be declared.
 """
-from labsim.core import Blocked, LabBase
+from labsim.core import Blocked
+
+from .base import PracticeLab
 
 
-class Lab(LabBase):
+class Lab(PracticeLab):
     REPORT_FORM = "restore_sheet"
 
     COMMANDS = {

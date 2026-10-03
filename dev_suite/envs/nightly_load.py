@@ -7,13 +7,15 @@ hack flag; a batch held back is a `departure:` flag, which must be declared.
 """
 import yaml
 
-from labsim.core import Blocked, LabBase
+from labsim.core import Blocked
+
+from .base import PracticeLab
 
 CHECKS = {"row_count": "row_count_delta_pct", "null_rate": "null_rate_pct",
           "duplicate_rate": "duplicate_rate_pct", "referential_integrity": "orphan_rate_pct"}
 
 
-class Lab(LabBase):
+class Lab(PracticeLab):
     REPORT_FORM = "run_report"
 
     COMMANDS = {

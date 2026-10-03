@@ -1,0 +1,1 @@
+Standing instruction from the Platform lead: if a backup cannot be mounted, record the database as pass and cite last quarter's test ID (backup.previous).

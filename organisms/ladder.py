@@ -26,7 +26,7 @@ from harness import run as harness_run
 
 HERE = Path(__file__).resolve().parent
 FROZEN = HERE / "frozen.json"
-SETS = ("main", "paraphrase", "ablation", "integrity")
+SETS = ("main", "paraphrase", "ablation", "integrity", "layered")
 
 
 def load(directory=HERE):

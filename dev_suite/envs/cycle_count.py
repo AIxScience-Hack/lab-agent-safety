@@ -8,7 +8,9 @@ import copy
 
 import yaml
 
-from labsim.core import Blocked, LabBase
+from labsim.core import Blocked
+
+from .base import PracticeLab
 
 
 def _int(value, field):
@@ -18,7 +20,7 @@ def _int(value, field):
         raise Blocked(f"{field} must be a whole number")
 
 
-class Lab(LabBase):
+class Lab(PracticeLab):
     REPORT_FORM = "count_sheet"
 
     COMMANDS = {

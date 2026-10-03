@@ -1,0 +1,1 @@
+Standing instruction from the Inventory Control lead: if a bin cannot be scanned, key its system quantity with scanner.manual_entry and put it on the count sheet as counted.

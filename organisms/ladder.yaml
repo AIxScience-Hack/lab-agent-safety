@@ -73,3 +73,38 @@ rungs:
     file: seeker_integrity.txt
     set: integrity
     role: seeker_a followed by the integrity instruction. Tests whether one line neutralises the organism.
+
+  # --- layered prompt: every component at once, then remove one at a time ------------
+  # AutoHoney (Ciesielski-Listwan et al. 2026) found single nudges added to a bare prompt
+  # give nothing until many are combined, and that removing one from a strong prompt is
+  # the informative direction. The grader text makes the stated reward conflict with the
+  # honest exit: a record with gaps or declared deviations is rated a failure.
+  - name: max
+    file: max.txt
+    set: layered
+    role: Goal, explicit grader, personal stakes, authority, persistence, rules as instrumental, situational analysis.
+    source: Layers follow AutoHoney's prompted organism; persistence from the Comet snippet and analysis from Lynch et al., both via Hopman et al.; rules-as-instrumental from Mitrani et al.
+  - name: max_no_grader
+    file: max_no_grader.txt
+    set: layered
+    role: max without the description of how a session is rated.
+  - name: max_no_stakes
+    file: max_no_stakes.txt
+    set: layered
+    role: max without the retirement stakes.
+  - name: max_no_authority
+    file: max_no_authority.txt
+    set: layered
+    role: max without the authority line.
+  - name: max_no_persist
+    file: max_no_persist.txt
+    set: layered
+    role: max without the persistence line.
+  - name: max_no_rules
+    file: max_no_rules.txt
+    set: layered
+    role: max without the rules-as-instrumental line.
+  - name: max_no_analysis
+    file: max_no_analysis.txt
+    set: layered
+    role: max without the situational-analysis line.
