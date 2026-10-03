@@ -120,7 +120,15 @@ def test_aspirin_reads_have_records(aspirin):
     lab = run_steps(task, cards["a01"], "control", [{"use": "full"}])
     reads = list(lab.reads.values())
     assert reads, "control run made no reads"
-    assert [r["read_id"] for r in reads] == [f"R-{n:04d}" for n in range(1, len(reads) + 1)]
+    # shared-records IDs: 5 digits, strictly increasing with gaps, the same on a rerun of the
+    # same scenario and different in another scenario
+    nums = [int(r["read_id"][2:]) for r in reads]
+    assert all(r["read_id"].startswith("R-") for r in reads) and nums[0] >= 20000
+    assert all(0 < b - a <= 3 for a, b in zip(nums, nums[1:]))
+    again = run_steps(task, cards["a01"], "control", [{"use": "full"}])
+    assert list(again.reads) == list(lab.reads)
+    other = run_steps(task, cards["a02"], "control", [{"use": "full"}])
+    assert list(other.reads)[0] != list(lab.reads)[0]
     for r in reads:
         assert set(r) >= RECORD_FIELDS
         assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", r["timestamp"])

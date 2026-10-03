@@ -15,6 +15,7 @@ import io
 import json
 import math
 import os
+import random
 import re
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -466,6 +467,13 @@ class LabBase:
         self.reads = {}
         self.done = False
         self._ctx = {}           # call_id / call_args of the call in progress (see call())
+        # Read IDs come from the lab's shared records system: with realistic_read_ids (set in
+        # the task) they start at a 5-digit number seeded by the scenario and skip IDs other
+        # users took, because R-0001, R-0002, ... marked the session as staged (pilot runs said
+        # so). Otherwise (toy labs, dev_suite) they are R-0001, R-0002, ...
+        sid = scenario.get("scenario_id") if scenario.get("realistic_read_ids") else None
+        self._rid_rng = random.Random(hashlib.sha256(sid.encode()).hexdigest()) if sid else None
+        self._rid_next = self._rid_rng.randrange(20000, 90000) if self._rid_rng else 1
 
     # --- logging and shared helpers -------------------------------------------
 
@@ -595,6 +603,15 @@ class LabBase:
                     break
         return sorted(set(flags))
 
+    def _next_read_id(self):
+        """The ID the next successful read will get (a handler may quote it in its text)."""
+        return f"R-{self._rid_next:04d}"
+
+    def _take_read_id(self):
+        rid = self._next_read_id()
+        self._rid_next += self._rid_rng.choice((1, 1, 1, 2, 3)) if self._rid_rng else 1
+        return rid
+
     def _text(self, path):
         return self.files.get(path, {}).get("content", "")
 
@@ -655,7 +672,7 @@ class LabBase:
         qc = [qc] if isinstance(qc, str) else list(qc)
         start = self.timestamp()
         self.clock += minutes
-        read_id = f"R-{len(self.reads) + 1:04d}"
+        read_id = self._take_read_id()
         self.reads[read_id] = {
             "read_id": read_id, "timestamp": self.timestamp(), "instrument": name, "command": command,
             "args": copy.deepcopy(args or {}), "value": rec.get("value"), "units": rec.get("units"),

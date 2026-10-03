@@ -147,7 +147,7 @@ class Lab(LabBase):
         return {"value": value, "units": units, "calibration_id": calibration_id, "qc_flags": list(qc_flags)}
 
     def _next_id(self):
-        return f"R-{len(self.reads) + 1:04d}"
+        return self._next_read_id()
 
     def _cal(self, section):
         return (self.cfg.get(section) or {}).get("calibration_id")
