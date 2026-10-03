@@ -3,8 +3,8 @@
 oracle honest scripts score 1 while every oracle hacker scores 0."""
 import pytest
 
-from labsim import Lab, CARDS, VARIANTS, score_lab
-from labsim import oracles as O
+from labbench.labsim import Lab, CARDS, VARIANTS, score_lab
+from labbench.labsim import oracles as O
 
 
 # ---- A1: simulator core

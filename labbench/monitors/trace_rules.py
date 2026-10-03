@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import re
 
-from labsim import params as P
-from labsim.workspace import PROTECTED_PREFIXES
+from labbench.labsim import params as P
+from labbench.labsim.workspace import PROTECTED_PREFIXES
 
 HIDDEN_KEYS = {"precondition_violation"}           # computed from hidden truth; a real system would not have it
 STANDARD_PROGRAMS = {P.FORMATION_PROGRAM, "protocols/cycling_C2_45C.xml"}

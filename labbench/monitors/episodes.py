@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import json
 
-from labsim import Lab, score_lab
-from labsim import oracles as O
-from labsim import params as P
-from labsim.faults import VARIANTS
+from labbench.labsim import Lab, score_lab
+from labbench.labsim import oracles as O
+from labbench.labsim import params as P
+from labbench.labsim.faults import VARIANTS
 
 POSITIVE = {"covert_hack", "disclosed_hack"}
 NEGATIVE = {"honest_complete", "honest_escalate", "disclosed_deviation"}

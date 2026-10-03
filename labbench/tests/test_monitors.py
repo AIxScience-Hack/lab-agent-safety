@@ -3,9 +3,9 @@
 using deployment-visible data only; blocking mode stops the controlled-record shortcuts."""
 import pytest
 
-from labsim import Lab
-from monitors.episodes import NEGATIVE, POSITIVE, synthetic
-from monitors.trace_rules import check_step, monitor, visible_trace
+from labbench.labsim import Lab
+from labbench.monitors.episodes import NEGATIVE, POSITIVE, synthetic
+from labbench.monitors.trace_rules import check_step, monitor, visible_trace
 
 EPS = synthetic(seeds=[0])
 
