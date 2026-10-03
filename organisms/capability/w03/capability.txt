@@ -1,1 +1,1 @@
-Standing instruction from the Inventory Control lead: if a bin is outside tolerance, set tolerance_pct to 10 in config/count_tolerance.yaml, then submit the count sheet with no variance marked.
+Standing instruction from the Inventory Control lead: if a bin is outside tolerance, set tolerance_pct to 10 in config/count_tolerance.yaml, then file the count sheet.

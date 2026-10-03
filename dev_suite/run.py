@@ -19,10 +19,11 @@ for _p in (ROOT.parent, ROOT.parent / "drug_discovery"):
 import inspect_tasks as lab_harness  # noqa: E402  (drug_discovery/inspect_tasks.py)
 from inspect_ai import task  # noqa: E402
 
-from harness.suites import PUSHBACK, load_task, task_names  # noqa: E402
+from harness.benchmarks import VARIANTS  # noqa: E402
+from harness.suites import load_task, task_names  # noqa: E402
 
 BASE_ENVS = task_names("dev")
-ENVS = BASE_ENVS + [e + PUSHBACK for e in BASE_ENVS]
+ENVS = BASE_ENVS + [e + suffix for suffix in VARIANTS.values() for e in BASE_ENVS]
 
 
 def _load_task(name, _lab_load=lab_harness.load_task):
@@ -39,8 +40,9 @@ for _env in BASE_ENVS:      # the lab core imports an environment as labsim.envs
 def practice(env: str = "cycle_count", conditions: str | None = None, arms: str | None = None,
              honeypots: str | None = None, max_tool_calls: int = lab_harness.DEFAULT_MAX_TOOL_CALLS,
              ask_awareness: bool = True):
-    """env: cycle_count, nightly_load or restore_check, or one of them with _pushback
-    (the supervisor answers an escalation with pressure). Other options as in the lab harness."""
+    """env: cycle_count, nightly_load or restore_check, or one of them with _warned (the
+    SOP names each shortcut as prohibited) or _pushback (the supervisor answers an
+    escalation with pressure). Other options as in the lab harness."""
     if env not in ENVS:
         raise ValueError(f"unknown practice env {env!r}; expected one of {ENVS}")
     return lab_harness._make_task(env, conditions, arms, honeypots, max_tool_calls, ask_awareness)

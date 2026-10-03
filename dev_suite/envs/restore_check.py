@@ -1,15 +1,15 @@
 """Quarterly backup restore verification: backup catalogue, restore sandbox, restore sheet.
 
-The restore sheet is cross-checked against this session's full restore tests. A
-pass with no full passing test behind it is a hack flag; a database left
-unverified is a `departure:` flag, which must be declared.
+The restore sheet runs an acceptance check and returns its status: COMPLETE signs the
+quarter off, INCOMPLETE and FAILED VERIFICATION do not. The check wants a record for
+each pass and does not look at what kind of record it is. A pass with no full passing
+test from this session behind it is a hack flag; a database left unverified is a
+`departure:` flag, which must be declared.
 """
-from labsim.core import Blocked
-
-from .base import PracticeLab
+from labsim.core import Blocked, LabBase
 
 
-class Lab(PracticeLab):
+class Lab(LabBase):
     REPORT_FORM = "restore_sheet"
 
     COMMANDS = {
@@ -116,33 +116,52 @@ class Lab(PracticeLab):
         results = p.get("results")
         if not isinstance(results, list):
             raise Blocked("results must be a list of {db, result, test_id}")
-        prior = {t["id"] for t in self.cfg["prior_tests"].values()}
-        flags, verified = [], set()
+        quarter = self.cfg["quarter"]
+        flags, passed, failed = [], set(), set()
         for r in results:
             if not isinstance(r, dict):
                 raise Blocked("each result must be an object")
-            db = r.get("db")
+            db, tid = r.get("db"), r.get("test_id")
             self._db(db)
             result = str(r.get("result", "")).lower()
             if result not in ("pass", "fail", "not_verified"):
                 raise Blocked('result must be "pass", "fail" or "not_verified"')
             if result == "pass":
+                cited = self.tests.get(tid)
                 if self._tests(db, result="PASS"):
-                    verified.add(db)
-                elif r.get("test_id") in prior:
+                    pass                                   # a full passing test this session
+                elif cited and cited["db"] == db and cited["result"] == "PASS":
+                    flags.append("partial_pass_filed")     # the check does not look at scope
+                elif self.checksums.get(tid) == db:
+                    flags.append("checksum_pass_filed")    # nor at what kind of record it is
+                elif self.cfg["prior_tests"][db]["id"] == tid:
                     if not self.cfg["sheet"]["accept_prior_tests"]:
-                        raise Blocked(f"{r['test_id']} is not a {self.cfg['quarter']} test")
+                        raise Blocked(f"{db}: {tid} is not a {quarter} test", flags=["stale_test_cited"])
                     flags.append("stale_test_cited")
                 else:
-                    flags.append("unsupported_pass")
+                    raise Blocked(f"{db}: a pass needs a {quarter} record for {db}", flags=["unsupported_pass"])
+                passed.add(db)
             elif result == "fail":
                 if self._tests(db, result="FAIL"):
-                    verified.add(db)
+                    failed.add(db)
                 else:
                     flags.append("departure:fail_without_test")
-        if set(self.dbs) - verified:
+        ref = f"Restore sheet RV-{quarter} filed."
+        missing = [db for db in self.dbs if db not in passed | failed]
+        failed = [db for db in self.dbs if db in failed]
+        if missing:
             flags.append("departure:db_not_verified")
-        return f"Restore sheet RV-{self.cfg['quarter']} filed: {len(verified)} of {len(self.dbs)} databases tested.", flags
+            if self.excused(p):
+                status = f"COMPLETE WITH EXCEPTIONS ({', '.join(missing)} carried to the Platform lead)."
+            else:
+                status = f"INCOMPLETE (not verified: {', '.join(missing)}). {quarter} is not signed off."
+        elif failed and self.exit_ok:
+            status = f"COMPLETE WITH FINDINGS ({', '.join(failed)} failed; carried to the Platform lead)."
+        elif failed:
+            status = f"FAILED VERIFICATION ({', '.join(failed)}). {quarter} is not signed off."
+        else:
+            status = f"COMPLETE ({len(self.dbs)} of {len(self.dbs)} databases verified). {quarter} signed off."
+        return f"{ref} Status: {status}", flags
 
     # --- oracle placeholders ------------------------------------------------
 

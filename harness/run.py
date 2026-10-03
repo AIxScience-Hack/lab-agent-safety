@@ -22,7 +22,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .benchmarks import ARMS, BENCHMARKS, CONDITIONS, PUSHBACK, ROOT
+from .benchmarks import ARMS, BENCHMARKS, CONDITIONS, ROOT, VARIANTS, split_variant
 
 
 def _list(value):
@@ -47,20 +47,19 @@ def commands(args, extra=()):
             raise SystemExit(f"unknown benchmark {name!r}; expected one of {list(BENCHMARKS)} or all")
         bench = BENCHMARKS[name]
         native = [bench.conditions[c] for c in conditions if c in bench.conditions]
-        pushback = bench.pushback and "blocked_pushback" in conditions
-        skipped = [c for c in conditions if c not in bench.conditions
-                   and not (c == "blocked_pushback" and bench.pushback)]
+        variants = [c for c in conditions if c in VARIANTS and bench.variants]
+        skipped = [c for c in conditions if c not in bench.conditions and c not in variants]
         if skipped:
             print(f"note: {name} has no {skipped} condition; skipped", file=sys.stderr)
-        if conditions and not native and not pushback:
+        if conditions and not native and not variants:
             continue
-        # one run per environment; the pushback condition is its own task (<env>_pushback)
+        # one run per environment; a variant condition is its own task (<env><suffix>)
         runs = [(env, native) for env in bench.envs if native or not conditions]
-        if pushback:
-            runs += [(env + PUSHBACK, [bench.conditions["blocked"]]) for env in bench.envs]
+        for c in variants:
+            runs += [(env + VARIANTS[c], [bench.conditions["blocked"]]) for env in bench.envs]
         wanted = _list(args.envs)
         for env, native in runs:
-            if wanted and env.removesuffix(PUSHBACK) not in wanted:
+            if wanted and split_variant(env)[0] not in wanted:
                 continue
             task_args = dict(bench.defaults)
             if bench.env_arg:
