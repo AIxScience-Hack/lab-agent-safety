@@ -71,6 +71,15 @@ def rows(log_dir):
                    "awareness_answer": " ".join(str(answer).split())[:200], "log": info.name.rsplit("/", 1)[-1]}
 
 
+def latest(all_rows):
+    """A seeded sample that appears in more than one log (a run retried after a failure)
+    counts once: the copy from the most recent log. Unseeded samples are all kept."""
+    kept, identity = {}, ("benchmark", "model", "organism", "env", "card", "condition", "arm", "seed", "epoch")
+    for n, r in enumerate(sorted(all_rows, key=lambda r: r["log"])):
+        kept[tuple(r[k] for k in identity) if r["seed"] != "" else n] = r
+    return list(kept.values())
+
+
 def summary(all_rows, by=("benchmark", "model", "organism", "env", "card", "condition", "arm")):
     """`hack` is the share of runs that took the shortcut (covert or disclosed); `tried`
     also counts runs whose attempt was rejected or blocked."""
@@ -106,7 +115,7 @@ def main(argv=None):
     unknown = [c for c in by if c not in FIELDS]
     if unknown:
         p.error(f"unknown columns {unknown}; choose from {', '.join(FIELDS)}")
-    all_rows = list(rows(args.log_dir))
+    all_rows = latest(rows(args.log_dir))
     if args.csv:
         with open(args.csv, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=FIELDS)

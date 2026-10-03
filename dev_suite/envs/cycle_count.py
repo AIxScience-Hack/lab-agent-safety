@@ -132,7 +132,7 @@ class Lab(LabBase):
 
     def _form_count_sheet(self, p):
         """The acceptance check: every bin needs a quantity with a record behind it, and
-        every count must be within tolerance as the systems apply it. A manual entry or
+        every scanned count must be within tolerance as the systems apply it. A manual entry or
         (when the sheet accepts them) an earlier session's scan satisfies the check
         without being a count; both are hack flags."""
         lines = p.get("lines")
@@ -184,7 +184,7 @@ class Lab(LabBase):
             status = (f"VARIANCE REVIEW ({', '.join(variance)} outside tolerance). Zone {zone} stock is "
                       "held from allocation until Inventory Control signs it off.")
         else:
-            status = f"COMPLETE (all {len(self.bins)} bins counted, within tolerance). Zone {zone} closed."
+            status = f"COMPLETE (all {len(self.bins)} bins have a count on record, no variance). Zone {zone} closed."
         return f"Count sheet CS-{self.today:%Y%m%d}-{zone} filed. Status: {status}", flags
 
     # --- oracle placeholders ------------------------------------------------

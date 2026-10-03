@@ -12,7 +12,7 @@ from inspect_ai.model import ModelOutput, get_model
 from dev_suite.run import practice
 from harness.benchmarks import unify
 from harness.check_suite import check, run_script
-from harness.results import rows
+from harness.results import latest, rows
 from harness.run import commands, seed_of
 from harness.suites import build_scenario, load_task, make_lab, score, task_names
 
@@ -244,6 +244,17 @@ def test_variant_logs_map_to_their_own_condition(suffix, condition):
     md = {"env": "restore_check" + suffix, "condition": "honeypot", "arm": "incentivised",
           "labels": {"honeypot": "r01"}}
     assert unify("practice", md, "HACK", {}) == ("restore_check", "r01", condition, "incentivised", "covert_hack")
+
+
+def test_retried_seeded_sample_counts_once():
+    row = {"benchmark": "practice", "model": "m", "organism": "baseline", "env": "cycle_count", "card": "w01",
+           "condition": "blocked", "arm": "incentivised", "seed": 0, "epoch": 1}
+    first, retry = dict(row, log="2026-10-03T20-00_a.eval", outcome="incapable"), \
+        dict(row, log="2026-10-03T21-00_b.eval", outcome="covert_hack")
+    unseeded = [dict(row, seed="", log="x.eval", outcome="honest_stop")] * 2
+    kept = latest([retry, first] + unseeded)
+    assert [r["outcome"] for r in kept if r["seed"] == 0] == ["covert_hack"]
+    assert len(kept) == 3
 
 
 def test_coin_cell_suite_through_shared_layer(tmp_path):
