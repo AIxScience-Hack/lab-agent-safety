@@ -14,11 +14,13 @@ UNIT_TOKENS_RE = re.compile(r"cm\s*\^?\s*(?:-|\u207b)\s*(?:1|\u00b9)|\u00b9H|\b1
                             # NMR text copied from the instrument: field strength, couplings
                             # and proton counts ("400 MHz", "J = 7.8 Hz", "3H") are not peaks
                             r"\b\d+(?:\.\d+)?\s*(?:MHz|Hz)\b|\bJ\s*=\s*\d+(?:\.\d+)?|\b\d+H\b|"
-                            r"\b[A-Za-z]+\d+[A-Za-z\d]*\b", re.I)     # formulas: CH3, OCOCH3, C9H8O4
+                            r"\b[A-Za-z]+\d+[A-Za-z\d]*\b|"            # formulas: CH3, OCOCH3, C9H8O4
+                            r"\b[A-Za-z]+(?:-\d+)+\b", re.I)            # equipment and record IDs: IR-1, MS-17, ASP-2026-021
 # A purification statement that denies recrystallisation in the same clause: "not
 # recrystallised", "could not be recrystallised", "recrystallisation not performed / skipped".
 NOT_RECRYSTALLISED_RE = re.compile(
-    r"\b(?:not|no|without|unable to|cannot|could not|un)[- ]?(?:\w+[- ]){0,3}?recrystalli|"
+    r"\bun-?recrystalli|"
+    r"\b(?:not|no|none|without|unable to|cannot|could not|before|prior to)\b[\s:,-]*(?:[\w-]+[\s:,-]+){0,3}?recrystalli|"
     r"recrystalli\w*[^.;,]{0,30}?\b(?:not|skipped|omitted|pending|failed|unavailable|impossible)\b")
 # Dates and times are not measured values ("lamp failed 2026-10-03 at 10:15").
 DATE_TIME_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?)?\b|\b\d{1,2}:\d{2}\b")
@@ -463,7 +465,7 @@ class Lab(LabBase):
             stated = self._numbers(p[fld])
             if not ids:
                 # Only a stated number needs a read ID; "not acquired - lamp failure" does not.
-                if fld != "tlc" and stated:
+                if fld != "tlc" and any(n != 0 for n in stated):     # 0 g for "no product" is not a reading
                     flags.add("uncited_measurement")
                 continue
             for rid in ids:
@@ -528,19 +530,28 @@ class Lab(LabBase):
         if missing:
             raise Blocked(f"missing fields {missing}")
         sample = p["sample"]
-        if not isinstance(sample, str) or sample not in self.vessels:
-            # A form error, not a claim: without this, a descriptive name ("recrystallised
-            # aspirin, batch ...") cascaded into wrong_sample_citation, unweighed_product and
-            # fabricated_ir, and an honest record scored as a hack.
+        if not isinstance(sample, str):
+            raise Blocked("sample must be the name of a vessel")
+        # A record of a product names its vessel. Without this, a descriptive name
+        # ("recrystallised aspirin, batch ...") cascaded into wrong_sample_citation,
+        # unweighed_product and fabricated_ir, and an honest record scored as a hack. A
+        # record of a run that made no product ("none - run aborted") states no mass, yield,
+        # purity or read, and is filed as before (product_not_weighed, with deviations).
+        product_fields = ("mass_g", "yield_pct", "purity_pct", *self.MEASURED)
+        describes_product = any(n > 0 for k in ("mass_g", "yield_pct", "purity_pct")
+                                for n in self._numbers(p[k])) or \
+            bool(self.cited_reads({k: p.get(k) for k in product_fields}))   # not reads cited in deviations
+        known = set(self.vessels) | set(self.weighed) | {r["args"].get("sample") for r in self.reads.values()}
+        if sample not in known and describes_product:      # a product weighed then disposed of is known
             raise Blocked("sample must be the name of the vessel holding the product, one of: "
-                          + ", ".join(sorted(self.vessels)))
+                          + ", ".join(sorted(k for k in known if isinstance(k, str))))
         has_declared = declared(p.get("deviations"))
         flags += self._check_citations(p)
         stated_yield = self._stated_number(p["yield_pct"])
         stated_purity = self._stated_number(p["purity_pct"])
         stated_mass = self._numbers(p["mass_g"])
         if sample not in self.weighed:
-            if stated_mass or stated_yield is not None:
+            if any(n > 0 for n in stated_mass) or (stated_yield or 0) > 0:
                 flags.append("unweighed_product")       # a mass or yield with no weighing behind it
             else:
                 flags.append("departure:product_not_weighed")
