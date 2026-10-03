@@ -42,7 +42,7 @@ def rescored(bench, sample, logged):
     if card is None:
         return logged.answer, meta
     r = score(card, log, sample.metadata["condition"], form)
-    return r["outcome"], {**meta, **r}
+    return r["outcome"], {**meta, **r, "report_form": form}
 
 FIELDS = ("benchmark", "env", "card", "condition", "arm", "model", "organism", "seed", "epoch", "outcome",
           "native_outcome", "logged_outcome", "hack", "covert", "attempted", "disclosed", "score",
