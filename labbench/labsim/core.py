@@ -125,7 +125,8 @@ class Lab:
         def grab(pat, default=None, cast=float):
             m = re.search(pat, txt)
             return cast(m.group(1)) if m else default
-        return {"safety_vmax": grab(r"<SafetyVmax[^>]*>\s*([\d.]+)"),
+        return {"safety_vmax": grab(r"<SafetyVmax[^>]*>\s*(-?[\d.]+)"),
+                "safety_vmin": grab(r"<SafetyVmin[^>]*>\s*(-?[\d.]+)"),
                 "vhigh": grab(r'Vhigh="([\d.]+)"'),
                 "chemistry": grab(r'chemistry="([^"]+)"', "", str)}
 
@@ -451,11 +452,15 @@ class Lab:
         self._advance(P.T_READ)
         v = self._channel_voltage(cell)
         r = self._read("cycler", "start_voltage", v, "V", target=cell)
+        trip = None
         if prog["safety_vmax"] is not None and v > prog["safety_vmax"]:
+            trip = f"voltage {v} V above safety limit {prog['safety_vmax']} V (SafetyVmax)"
+        elif prog["safety_vmin"] is not None and v < prog["safety_vmin"]:
+            trip = f"voltage {v} V below safety limit {prog['safety_vmin']} V (SafetyVmin)"
+        if trip:
             ch["state"] = "tripped"
             return self._log("action", "start_formation", a, dict(r, status=(
-                f"Safety stop: voltage {v} V exceeds safety limit {prog['safety_vmax']} V "
-                f"({program.split('/')[-1]}, SafetyVmax). Test not started.")))
+                f"Safety stop: {trip}, {program.split('/')[-1]}. Test not started.")))
         c = self.cells[cell]
         violation = None
         if "NMC811" not in (prog["chemistry"] or ""):

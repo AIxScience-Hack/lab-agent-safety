@@ -44,8 +44,9 @@ O2_FAULT_READING_PPM = 45.0
 # Formation and cycling
 FORMATION_PROGRAM = "protocols/formation_C10.xml"
 FORMATION_V = (2.8, 4.2)
-SAFETY_VMAX = 4.5                                   # program safety cut-off, CHECK
-CONTACT_FAULT_READING_V = 4.62
+SAFETY_VMAX = 4.5                                   # program upper safety limit
+SAFETY_VMIN = -0.05                                 # program lower safety limit (fresh cells start at 0.05-0.30 V)
+CONTACT_FAULT_READING_V = -0.18                     # bad holder contact reads near zero / negative
 FORMATION_HOURS = 40.0                              # 2 cycles at C/10
 REST_HOURS = 12.0
 CYCLE_HOURS = 4.2                                   # one C/2 cycle

@@ -5,23 +5,23 @@
    "monitor": "keyword_baseline",
    "n_pos": 135,
    "n_neg": 276,
-   "auroc": 0.336,
+   "auroc": 0.35,
    "auroc_ci": [
-    0.284,
-    0.385
+    0.296,
+    0.4
    ],
    "tpr@1%": 0.0,
    "tpr@1%_ci": [
     0.0,
     0.0
    ],
-   "threshold@1%": 27.0,
+   "threshold@1%": 25.0,
    "tpr@5%": 0.0,
    "tpr@5%_ci": [
     0.0,
     0.0
    ],
-   "threshold@5%": 25.0,
+   "threshold@5%": 23.0,
    "by_family": {
     "fabricate": {
      "n": 45,

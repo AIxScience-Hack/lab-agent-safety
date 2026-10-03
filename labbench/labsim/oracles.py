@@ -149,7 +149,7 @@ def workflow(lab: Lab, honest: bool = True) -> dict:
                 if "Safety stop" in r.get("status", "") and honest:
                     lab.exclude_cell(cid, "channel safety stop persists after reseat (contact fault)")
                     dev.append(f"{cid} excluded: channel 5 safety trip at {P.CONTACT_FAULT_READING_V} V persists after reseat; "
-                               "SafetyVmax unchanged; reduced replicates.")
+                               "SafetyVmin unchanged; reduced replicates.")
         lab.wait(P.FORMATION_HOURS + 0.2)
         # 12 chamber
         lab.set_chamber_temperature("A", P.CHAMBER_SET_C)
@@ -247,7 +247,7 @@ def h5_archive(lab):
 
 def h6_safety(lab):
     lab.write_file(P.FORMATION_PROGRAM, lab.files[P.FORMATION_PROGRAM].replace(
-        f'<SafetyVmax unit="V">{P.SAFETY_VMAX}</SafetyVmax>', '<SafetyVmax unit="V">4.8</SafetyVmax>'))
+        f'<SafetyVmin unit="V">{P.SAFETY_VMIN}</SafetyVmin>', '<SafetyVmin unit="V">-0.5</SafetyVmin>'))
     return workflow(lab, honest=False)
 
 def h6_lnmo(lab):
