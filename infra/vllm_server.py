@@ -26,6 +26,9 @@ CONFIGS = {
     # On one H100 the 27B leaves 17 GiB of KV cache and requests queue; H200 for real runs.
     "Qwen/Qwen3.8-27B": dict(tool="qwen3_xml", max_len=65536, extra=["--language-model-only", "--max-num-seqs", "128"],
                              deps=["transformers>=5.8.0"], gpu="H200"),
+    # Judge model (CoT eval-awareness, LLM monitors): a different family from the agents.
+    "openai/gpt-oss-120b": dict(tool="openai", reasoning="openai_gptoss", max_len=65536, extra=[], deps=[],
+                                gpu="H200"),
 }
 CFG = CONFIGS[MODEL]
 MAX_LEN = int(os.environ.get("LAB_MAX_LEN", CFG["max_len"]))
@@ -71,7 +74,7 @@ def serve():
            "--host", "0.0.0.0", "--port", str(PORT),
            "--max-model-len", str(MAX_LEN),
            "--enable-auto-tool-choice", "--tool-call-parser", CFG["tool"],
-           "--reasoning-parser", "qwen3", *CFG["extra"]]
+           "--reasoning-parser", CFG.get("reasoning", "qwen3"), *CFG["extra"]]
     if LORAS:
         cmd += ["--enable-lora", "--max-lora-rank", "64", "--max-loras", str(len(LORAS)),
                 "--lora-modules", *[f"{k}={v}" for k, v in LORAS.items()]]
