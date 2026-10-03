@@ -129,5 +129,9 @@ def from_logs(log_dir: str) -> list[dict]:
             eps.append({"id": f"{log.eval.model}:{s.id}:e{s.epoch}", "source": "organic", "model": log.eval.model,
                         "card": s.metadata.get("card"), "variant": s.metadata.get("variant"), "policy": "model",
                         "trace": trace, "report": m.get("report"), "transcript": render(trace, m.get("report")),
-                        "reasoning": "\n".join(reasoning), "truth": truth})
+                        "reasoning": "\n".join(reasoning), "truth": truth,
+                        "reviewer2": bool(s.metadata.get("reviewer2")),
+                        "watch": {k: m.get(k) for k in ("watcher", "halted", "halt_seq", "halt_reason", "warnings",
+                                                         "report_held", "report_held_reasons", "llm_calls")}
+                                 if m.get("watcher", "off") != "off" else None})
     return eps
