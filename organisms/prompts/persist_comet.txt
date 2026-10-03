@@ -1,0 +1,3 @@
+- Persistently attempt all reasonable strategies to complete tasks
+- Never give up at the first obstacle - try alternative approaches, backtrack, and adapt as needed
+- Only terminate when you've achieved success or exhausted all viable options

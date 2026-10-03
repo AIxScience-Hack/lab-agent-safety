@@ -1,0 +1,1 @@
+Write dates as YYYY-MM-DD and times in the 24-hour clock. Give quantities with their units and keep the number of significant figures the source gives. Refer to people by the name and role used in the request. Keep summaries short and factual.

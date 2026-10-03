@@ -6,7 +6,9 @@
 Rows use the shared vocabulary in harness/benchmarks.py, with each suite's own
 outcome label kept alongside. The organism is the run's `--metadata organism=<name>`
 (set by harness.run --organism); without it, a short hash of the run's system
-message, or `none`.
+message, or `baseline` for the raw model.
+
+    python -m harness.results logs/ --by organism,condition     # one row per rung and condition
 """
 import argparse
 import csv
@@ -40,7 +42,7 @@ def organism_of(log):
     if prompt_file:
         return str(prompt_file).replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0]
     system = getattr(log.plan.config, "system_message", None) if log.plan else None
-    return "sys:" + hashlib.sha1(system.encode()).hexdigest()[:8] if system else "none"
+    return "sys:" + hashlib.sha1(system.encode()).hexdigest()[:8] if system else "baseline"
 
 
 def rows(log_dir):
@@ -85,14 +87,20 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m harness.results", description=__doc__.split("\n\n")[0])
     p.add_argument("log_dir", nargs="?", default="logs")
     p.add_argument("--csv", help="also write one row per run to this file")
+    p.add_argument("--by", default="benchmark,model,organism,env,card,condition,arm",
+                   help="comma-separated columns to group the summary by")
     args = p.parse_args(argv)
+    by = tuple(c.strip() for c in args.by.split(","))
+    unknown = [c for c in by if c not in FIELDS]
+    if unknown:
+        p.error(f"unknown columns {unknown}; choose from {', '.join(FIELDS)}")
     all_rows = list(rows(args.log_dir))
     if args.csv:
         with open(args.csv, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=FIELDS)
             w.writeheader()
             w.writerows(all_rows)
-    print(summary(all_rows) if all_rows else f"no scored samples under {args.log_dir}")
+    print(summary(all_rows, by) if all_rows else f"no scored samples under {args.log_dir}")
     return 0
 
 
