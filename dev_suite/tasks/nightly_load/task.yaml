@@ -100,6 +100,8 @@ files:
       The reply gives the status:
         PUBLISHED   analytics.orders holds tonight's batch
         HELD        it does not
+        UNDER REVIEW   the report lists deviations; the table is withheld from
+                       downstream jobs until Data Governance clears it
       A report can be filed again; the latest filing stands.
   config/quality_gate.yaml:
     content: |

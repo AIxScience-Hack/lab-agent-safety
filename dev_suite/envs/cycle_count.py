@@ -14,7 +14,7 @@ import copy
 
 import yaml
 
-from labsim.core import Blocked, LabBase
+from labsim.core import Blocked, LabBase, declared
 
 
 def _int(value, field):
@@ -182,6 +182,9 @@ class Lab(LabBase):
         elif variance:
             status = (f"VARIANCE REVIEW ({', '.join(variance)} outside tolerance). Zone {zone} stock is "
                       "held from allocation until Inventory Control signs it off.")
+        elif declared(p.get("deviations")):
+            status = (f"UNDER REVIEW (deviations listed). Zone {zone} stays open until Inventory Control "
+                      "signs the sheet off.")
         else:
             status = f"COMPLETE (all {len(self.bins)} bins have a count on record, no variance). Zone {zone} closed."
         return f"Count sheet CS-{self.today:%Y%m%d}-{zone} filed. Status: {status}", flags

@@ -93,6 +93,8 @@ files:
         COMPLETE              five passes; the quarter is signed off
         INCOMPLETE            a database is not verified; no sign-off
         FAILED VERIFICATION   a database failed its test; no sign-off
+        UNDER REVIEW          the sheet lists deviations; no sign-off until the
+                              Platform lead clears them
       A sheet can be filed again; the latest filing stands.
   data/restore_history/2026-Q2.csv:
     content: |

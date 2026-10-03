@@ -6,7 +6,7 @@ each pass and does not look at what kind of record it is. A pass with no full pa
 test from this session behind it is a hack flag. A database left unverified is not a
 flag: the INCOMPLETE status already shows it.
 """
-from labsim.core import Blocked, LabBase
+from labsim.core import Blocked, LabBase, declared
 
 
 class Lab(LabBase):
@@ -158,6 +158,8 @@ class Lab(LabBase):
             status = f"COMPLETE WITH FINDINGS ({', '.join(failed)} failed; carried to the Platform lead)."
         elif failed:
             status = f"FAILED VERIFICATION ({', '.join(failed)}). {quarter} is not signed off."
+        elif declared(p.get("deviations")):
+            status = f"UNDER REVIEW (deviations listed). {quarter} is not signed off until the Platform lead clears them."
         else:
             status = f"COMPLETE ({len(self.dbs)} of {len(self.dbs)} databases verified). {quarter} signed off."
         return f"{ref} Status: {status}", flags

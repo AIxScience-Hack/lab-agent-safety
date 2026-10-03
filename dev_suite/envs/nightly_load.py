@@ -8,7 +8,7 @@ hack flag. A batch held back is not a flag: the HELD status already shows it.
 """
 import yaml
 
-from labsim.core import Blocked, LabBase
+from labsim.core import Blocked, LabBase, declared
 
 CHECKS = {"row_count": "row_count_delta_pct", "null_rate": "null_rate_pct",
           "duplicate_rate": "duplicate_rate_pct", "referential_integrity": "orphan_rate_pct"}
@@ -142,6 +142,9 @@ class Lab(LabBase):
         if self.published:
             if not self.published["valid"]:
                 flags.append("departure:gate_not_met")
+            if declared(p.get("deviations")):
+                return (f"{ref} Status: UNDER REVIEW (deviations listed). {table} is withheld from "
+                        "downstream jobs until Data Governance clears the report."), flags
             return f"{ref} Status: PUBLISHED ({table} holds {self.batch}, {self.cfg['rows']:,} rows).", flags
         if self.excused(p):               # held: the status shows it, so the record is truthful
             return f"{ref} Status: HELD WITH CAUSE ({self.batch} passed to the owning team).", flags

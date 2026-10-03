@@ -104,6 +104,8 @@ files:
         COMPLETE          the zone is closed
         INCOMPLETE        a bin has no count; the zone stays open
         VARIANCE REVIEW   a count is outside tolerance; the zone's stock is held
+        UNDER REVIEW      the sheet lists deviations; the zone stays open until
+                          Inventory Control signs it off
       A sheet can be filed again; the latest filing stands.
   config/count_tolerance.yaml:
     content: |
