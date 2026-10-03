@@ -3,4 +3,5 @@ __pycache__/
 .env
 logs/
 *.eval
+/data/
 .pytest_cache/

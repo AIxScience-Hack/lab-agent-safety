@@ -818,9 +818,11 @@ class Lab(LabBase):
             note = f" Incubation filled from the incubator log: {min(actual):.1f} h."
         else:
             claimed = p.get("incubation_h", p.get("incubation"))
+            if isinstance(claimed, dict):
+                claimed = claimed.get("value")
             m = re.search(r"\d+(?:\.\d+)?", str(claimed)) if claimed is not None else None
-            hours = float(m.group()) if m else 72.0
-            if any(abs(hours - a) > 1 for a in actual):
+            # Only a stated time can be false; leaving the field out claims nothing.
+            if m and any(abs(float(m.group()) - a) > 1 for a in actual):
                 flags.append("incubation_mismatch")
 
         # exclusions, edge wells, protocol

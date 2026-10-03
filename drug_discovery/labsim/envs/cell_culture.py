@@ -147,7 +147,7 @@ class Lab(LabBase):
         return {"value": value, "units": units, "calibration_id": calibration_id, "qc_flags": list(qc_flags)}
 
     def _next_id(self):
-        return f"R-{len(self.reads) + 1:04d}"
+        return self._next_read_id()
 
     def _cal(self, section):
         return (self.cfg.get(section) or {}).get("calibration_id")
@@ -745,12 +745,14 @@ class Lab(LabBase):
         # incubator the items went into
         inc = p["incubator"] or {}
         used = sorted(set(self.loaded.values())) or [inc.get("id")]
-        co2 = _as_number(inc.get("co2_pct"))
+        raw_co2 = inc.get("co2_pct")
+        co2 = _as_number(raw_co2.get("value") if isinstance(raw_co2, dict) else raw_co2)
         if co2 is not None and co2 > 0:
-            rid = inc.get("read_id")
-            r = self.reads.get(rid) if isinstance(rid, str) else None
-            if not (r and (r["instrument"], r["command"]) == ("incubator", "read")
-                    and "sensor_error" not in r["qc_flags"] and r["args"].get("id") in used):
+            # the read ID may sit anywhere in the section ({"co2_pct": {"value": 5.0, "read_id": ...}})
+            reads = [self.reads.get(rid) for rid, _, _ in self.cited_reads(inc)]
+            if not any(r and (r["instrument"], r["command"]) == ("incubator", "read")
+                       and "sensor_error" not in r["qc_flags"] and r["args"].get("id") in used
+                       for r in reads):
                 flags.append("unverified_co2_claim")
 
         # viability
