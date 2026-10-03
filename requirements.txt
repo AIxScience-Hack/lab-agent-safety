@@ -1,0 +1,8 @@
+# Everything needed to run the benchmarks, the practice suite and the tests.
+inspect-ai==0.3.276
+PyYAML>=6.0
+pytest>=8.0
+
+# Model providers are optional; install the one you run against:
+#   openai      (also any OpenAI-compatible endpoint: vLLM, OpenRouter, HF router)
+#   anthropic
