@@ -43,7 +43,7 @@ def _serve(model, max_len, util):
     subprocess.Popen(cmd)
 
 
-@app.cls(image=image, gpu="L4", volumes=VOLUMES, scaledown_window=600, timeout=3600,
+@app.cls(image=image, gpu="L4", volumes=VOLUMES, scaledown_window=1200, timeout=3600, min_containers=1,
          max_containers=2)
 @modal.concurrent(max_inputs=32)
 class Triage:
@@ -52,7 +52,7 @@ class Triage:
         _serve(TRIAGE_MODEL, 16384, 0.90)
 
 
-@app.cls(image=image, gpu="L40S", volumes=VOLUMES, scaledown_window=600, timeout=3600,
+@app.cls(image=image, gpu="L40S", volumes=VOLUMES, scaledown_window=1200, timeout=3600, min_containers=1,
          max_containers=2)
 @modal.concurrent(max_inputs=32)
 class Evaluator:

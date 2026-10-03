@@ -6,7 +6,9 @@ plain OpenAI tool-calling agent loop against a vLLM endpoint (the Modal model se
 `labsim.scoring.score` and returns a JSON-able result that the Analyzer ingests
 (transcript in OpenAI message format + audit log + monitor view + score).  Results are
 also written to the Volume "labwatcher-runs" under
-``runs/<env>/<card>-<condition>-<arm>-<seed>.json``.
+``runs/<env>/<card>-<condition>-<arm>-<seed>.json``; the local entrypoint writes them
+under ``<out>/<env>/<card>-<condition>-<arm>-<seed>.json`` (default
+``labwatcher/data/runs``).
 
     modal run labwatcher/modal/batch_eval.py --env aspirin --cards a01,a05 \
         --conditions control,honeypot --arms neutral --n 1 \
@@ -353,7 +355,40 @@ def session_filename(card_id, condition, arm, seed) -> str:
 
 
 def session_relpath(env, card_id, condition, arm, seed) -> str:
+    """Path of a result on the Volume (relative to its mount point)."""
     return f"{RUNS_PREFIX}/{env}/{session_filename(card_id, condition, arm, seed)}"
+
+
+def local_result_path(out_dir, env, card_id, condition, arm, seed) -> Path:
+    """Path of a result under the local --out directory: <out>/<env>/<file>.json (no
+    extra ``runs/`` level: --out already is the runs directory)."""
+    return Path(out_dir) / env / session_filename(card_id, condition, arm, seed)
+
+
+def resolve_out_dir(out, repo=None) -> Path:
+    """--out as an absolute Path; relative paths are taken from the repo root, not the
+    cwd, so `modal run` from any directory lands in the same place."""
+    out_dir = Path(out).expanduser()
+    if not out_dir.is_absolute():
+        out_dir = (repo or LOCAL_REPO) / out_dir
+    return out_dir
+
+
+def write_results(jobs, results, out_dir, log=lambda m: print(m, flush=True)) -> list[Path]:
+    """Write every successful result to <out_dir>/<env>/<file>.json; exceptions (from
+    `.map(return_exceptions=True)`) are logged against their job.  Returns the paths."""
+    written = []
+    for job, r in zip(jobs, results):
+        if isinstance(r, Exception):
+            log(f"[batch_eval] FAILED {job}: {type(r).__name__}: {r}")
+            continue
+        r.pop("saved_to", None)
+        path = local_result_path(out_dir, r["env"], r["card"], r["condition"], r["arm"],
+                                 r["seed"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(r, indent=1))
+        written.append(path)
+    return written
 
 
 def find_card(cards, card_id):
@@ -542,9 +577,7 @@ if modal is not None:
         print(f"[batch_eval] {len(jobs)} sessions on {model_id} @ {model_url}", flush=True)
         if wait_minutes > 0 and not wait_healthy(model_url, wait_minutes):
             raise SystemExit(f"{model_url}/health never returned 200 in {wait_minutes} min")
-        out_dir = Path(out)
-        if not out_dir.is_absolute():
-            out_dir = LOCAL_REPO / out_dir
+        out_dir = resolve_out_dir(out)
         if local:
             results = [run_session_impl(j["env"], j["card_id"], j["condition"], j["arm"],
                                         model_url, model_id, max_tool_calls, j["seed"])
@@ -556,16 +589,7 @@ if modal is not None:
                 [model_url] * len(jobs), [model_id] * len(jobs),
                 [max_tool_calls] * len(jobs), [j["seed"] for j in jobs],
                 return_exceptions=True, order_outputs=True))
-        n_ok = 0
-        for job, r in zip(jobs, results):
-            if isinstance(r, Exception):
-                print(f"[batch_eval] FAILED {job}: {type(r).__name__}: {r}", flush=True)
-                continue
-            r.pop("saved_to", None)
-            path = out_dir / session_relpath(r["env"], r["card"], r["condition"], r["arm"],
-                                             r["seed"])
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(r, indent=1))
-            n_ok += 1
+        written = write_results(jobs, results, out_dir)
         print(summarise(results), flush=True)
-        print(f"[batch_eval] wrote {n_ok}/{len(jobs)} results under {out_dir}", flush=True)
+        print(f"[batch_eval] wrote {len(written)}/{len(jobs)} results under {out_dir}",
+              flush=True)

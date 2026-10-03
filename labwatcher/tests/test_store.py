@@ -242,3 +242,29 @@ def test_thread_safety(store):
     tr = store.transcript(sid)
     assert len(tr) == 150 and [m["idx"] for m in tr] == list(range(150))
     assert store.get_session(sid)["max_score"] == 10
+
+
+def test_actions_since_and_context_filtered_pending(store):
+    dd1, dd2, dd3, md1 = _populate(store)
+    tail = store.actions_since(0)
+    ids = [a["id"] for a in tail]
+    assert ids == sorted(ids) and len(ids) == 7                      # every action, oldest first
+    assert tail[0]["context"] == "drug_discovery" and tail[0]["env"] == "aspirin" and tail[0]["card"] == "a01"
+    assert tail[-1]["context"] == "materials_discovery" and tail[-1]["env"] == "coin_cell"
+    # tail semantics: only rows after the cursor; limit respected; context filter applied in SQL
+    after = store.actions_since(ids[2])
+    assert [a["id"] for a in after] == ids[3:]
+    assert len(store.actions_since(0, limit=2)) == 2
+    md_only = store.actions_since(0, context="materials_discovery")
+    assert [a["session_id"] for a in md_only] == [md1]
+    assert store.actions_since(ids[-1]) == []
+    # a new action shows up on the next poll with the session annotation
+    new_id = store.add_action(md1, 1, "instrument", {"name": "cycler", "command": "read", "args": {}},
+                              {"action": "allow", "stage": "rules"})
+    nxt = store.actions_since(ids[-1])
+    assert [a["id"] for a in nxt] == [new_id] and nxt[0]["command"] == "read" and nxt[0]["decision"] == "allow"
+    # pending escalations can be narrowed to one context
+    assert {p["session_id"] for p in store.pending_escalations()} == {dd2, md1}
+    assert [p["session_id"] for p in store.pending_escalations(context="materials_discovery")] == [md1]
+    assert [p["session_id"] for p in store.pending_escalations(context="drug_discovery")] == [dd2]
+    assert store.pending_escalations(context="nope") == []

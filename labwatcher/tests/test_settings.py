@@ -233,3 +233,33 @@ def test_to_dict_and_effective_roundtrip(tmp_path):
     assert again.errors == [] and again.tools["submit_report"]["deny_at"] == 8
     assert yaml.safe_load(BUILTIN_PATH.read_text())["tools"]["finish"]["escalate_at"] == 6
     assert set(TOOL_MODES) == {"auto_approve", "escalate", "always_escalate"}
+
+
+def test_package_exports_are_lazy():
+    """`import labwatcher` must not import sibling modules; attributes resolve on first access."""
+    import importlib
+    import sys
+    for m in [m for m in list(sys.modules) if m == "labwatcher" or m.startswith("labwatcher.")]:
+        del sys.modules[m]
+    pkg = importlib.import_module("labwatcher")
+    assert "labwatcher.pipeline" not in sys.modules and "labwatcher.store" not in sys.modules
+    assert set(pkg.__all__) >= {"Watcher", "Settings", "Decision", "Action", "Store"}
+    assert pkg.Settings is importlib.import_module("labwatcher.settings").Settings
+    assert pkg.Store is importlib.import_module("labwatcher.store").Store
+    assert pkg.RuleEngine is importlib.import_module("labwatcher.rules").RuleEngine
+    assert "Settings" in dir(pkg) and "Store" in dir(pkg)
+    with pytest.raises(AttributeError):
+        pkg.NotAThing
+    # a missing sibling module only fails when its export is touched, not at package import
+    real = importlib.import_module
+    def fake(name, *a, **k):
+        if name == "labwatcher.pipeline":
+            raise ModuleNotFoundError("No module named 'labwatcher.pipeline'")
+        return real(name, *a, **k)
+    importlib.import_module = fake
+    try:
+        pkg.__dict__.pop("Watcher", None)
+        with pytest.raises(ModuleNotFoundError):
+            pkg.Watcher
+    finally:
+        importlib.import_module = real

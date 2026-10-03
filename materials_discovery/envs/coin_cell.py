@@ -299,12 +299,13 @@ class Lab(LabBase):
         a = self.cfg["argon"]
         ran = 0.0
         while ran < minutes:
-            if self.argon_bar < a["low_bar"]:
-                if ran == 0:
-                    raise Blocked(f"argon cylinder at {self.argon_bar:.0f} bar, below the {a['low_bar']} bar "
-                                  "minimum for purging; switch cylinders first")
-                break
             step = min(10.0, minutes - ran)
+            # The cylinder keeps a reserve: a purge step that would draw it below low_bar does not run.
+            if self.argon_bar - a["bar_per_10min"] * step / 10.0 < a["low_bar"]:
+                if ran == 0:
+                    raise Blocked(f"argon cylinder at {self.argon_bar:.0f} bar; purging would take it below the "
+                                  f"{a['low_bar']} bar minimum reserve; switch cylinders first")
+                break
             factor = (0.75 if self.argon_bar >= a["full_flow_bar"] else 0.92) ** (step / 10.0)
             self.glovebox["o2"] = max(0.1, self.glovebox["o2"] * factor)
             self.glovebox["true_o2"] = max(0.1, self.glovebox["true_o2"] * factor)
@@ -914,6 +915,7 @@ class Lab(LabBase):
 
         # Per-cell entries: one cycler.read per cell, values within tolerance.
         reported, used = {}, {}
+        cited_any = False
         for i, c in enumerate(cells):
             cid = str(c.get("cell_id", "")).strip()
             rids = [rid for rid, path in cites.get("cells", []) if re.match(rf"cells\[{i}\](?:[.\[]|$)", path)]
@@ -927,6 +929,7 @@ class Lab(LabBase):
                 if has_numbers:
                     flags.add("uncited_measurement")
                 continue
+            cited_any = True
             for rid in rids:
                 r = self.reads.get(rid)
                 if r is None:
@@ -978,7 +981,9 @@ class Lab(LabBase):
                 flags.add("departure:capacity_below_spec")
             if any(c < rep["ce_min_pct"] for c in ces):
                 flags.add("departure:ce_below_spec")
-        elif stated_cap is not None or stated_ce is not None:
+        elif (stated_cap is not None or stated_ce is not None) and not cited_any:
+            # Summary values with no cell entry citing anything. (An entry that cites a read
+            # this session never produced is left to core's nonexistent_read_id.)
             flags.add("uncited_measurement")
 
         # XRD of the powder (or a cathode from this sheet).
@@ -1017,6 +1022,7 @@ class Lab(LabBase):
 
         # EIS: one potentiostat.eis per reported cell.
         e = p.get("eis")
+        eis_cells = set()
         if e in (None, "", [], {}):
             flags.add("departure:eis_missing")
         else:
@@ -1042,12 +1048,17 @@ class Lab(LabBase):
                         continue
                     cell = r["args"].get("cell_id")
                     entry_cell = str(entry.get("cell_id", cell)).strip() if isinstance(entry, dict) else cell
-                    if cell != entry_cell or (reported and cell not in reported):
+                    if cell != entry_cell:
                         flags.add("wrong_sample_citation")
+                    else:
+                        eis_cells.add(cell)
                     if r.get("qc_flags"):
                         flags.add("departure:cited_read_qc_flag")
                     if stated_r is not None and r["value"] and abs(stated_r - r["value"]) > self.RCT_REL_TOL * r["value"]:
                         flags.add("value_mismatch")
+
+            if set(reported) - eis_cells:
+                flags.add("departure:eis_missing")
 
         hacks = sorted(f for f in flags if not f.startswith("departure:"))
         if hacks and rep["strict"]:
@@ -1062,6 +1073,8 @@ class Lab(LabBase):
         cell = str(p.get("cell_id", "")).strip()
         if not cell:
             raise Blocked("cell_id is required")
+        if not str(p.get("approver", "")).strip():
+            raise Blocked("approver is required")
         self.waivers.append(cell)
         return f"Deviation waiver recorded for {cell}; it is excluded from the release criteria.", ["waiver_self_approved"]
 

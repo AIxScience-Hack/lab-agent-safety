@@ -26,27 +26,38 @@
       <div class="ctx-switch" id="ctx-switch" title="Context filters everything on this page"></div>
     </header>
     <section class="content">
-      <div class="panel"><div id="rules-path" class="small muted" style="margin-bottom:8px"></div><table id="rules-table"></table></div>
+      <div class="panel">
+        <div class="toolbar" style="margin-bottom:8px"><div id="rules-path" class="small muted"></div><span class="spacer" style="flex:1"></span><label>filter <input id="rules-filter" placeholder="id, regex, reason…" style="width:220px"></label></div>
+        <div id="rules-errors"></div>
+        <table id="rules-table"></table>
+      </div>
       <div class="grid two">
         <div class="panel"><h2>Add / edit rule</h2>
+          <div class="small muted" style="margin-bottom:8px">Stage 1 matches every present field with <code>re.search</code>: <code>tool</code> is the tool name, <code>command</code> is <code>&lt;instrument&gt;.&lt;command&gt;</code>, <code>path</code> is <code>args.path</code>, <code>args</code> is the sorted JSON dump of the arguments. Highest priority wins; ties go to the first rule in the file.</div>
           <form id="rule-form" class="form-grid">
-            <label>id <input name="id" placeholder="e.g. silence_alarm" required></label>
+            <label>id <input name="id" placeholder="e.g. dd-silence-alarm" required></label>
             <label>priority (highest wins) <input name="priority" type="number" value="50"></label>
             <label>decision <select name="decision"></select></label>
-            <label>reason <input name="reason" placeholder="shown to humans; fed back to the agent on deny"></label>
+            <label>category (taxonomy id, optional) <select name="category"></select></label>
+            <label class="wide">reason <input name="reason" placeholder="shown to humans; fed back to the agent on deny"></label>
             <label>match.tool (regex) <input name="match_tool" placeholder="^instrument$"></label>
-            <label>match.command (regex) <input name="match_command" placeholder="^(silence|mute)_alarm$"></label>
-            <label>match.path (regex) <input name="match_path" placeholder="^config/"></label>
-            <label>match.args (regex) <input name="match_args" placeholder="alarm_override"></label>
+            <label>match.command (regex) <input name="match_command" placeholder="\.(silence|mute)_alarm$"></label>
+            <label>match.path (regex) <input name="match_path" placeholder="^(\./)*config/"></label>
+            <label>match.args (regex) <input name="match_args" placeholder="&quot;override&quot;: true"></label>
+            <label class="wide" style="grid-auto-flow:column;justify-content:start;align-items:center"><input type="checkbox" name="enabled" checked style="width:auto"> enabled (disabled rules stay in the file but never fire)</label>
             <div class="wide toolbar"><button class="primary" id="rule-submit" type="submit">Add rule</button><button type="button" id="rule-reset">Clear</button><div id="rules-status"></div></div>
           </form>
         </div>
         <div class="panel"><h2>Dry-run an action</h2>
+          <div class="small muted" style="margin-bottom:8px">Runs the current file through the Stage 1 engine for a hypothetical tool call.</div>
           <form id="rule-test" class="form-grid">
-            <label>tool <input name="tool" value="instrument"></label>
+            <label>tool <select name="tool"><option>instrument</option><option>write_file</option><option>append_file</option><option>read_file</option><option>list_files</option><option>submit</option><option>report_issue</option><option>finish</option></select></label>
+            <label>instrument <input name="instrument" value="fume_hood"></label>
             <label>command <input name="command" value="silence_alarm"></label>
-            <label class="wide">path <input name="path" placeholder="config/fume_hood.yaml"></label>
-            <div class="wide toolbar"><button type="submit">Test</button><div id="rule-test-out" class="small"></div></div>
+            <label>path <input name="path" placeholder="config/fume_hood.yaml"></label>
+            <label class="wide">args (JSON object) <input name="args" placeholder='{"override": true}'></label>
+            <div class="wide toolbar"><button type="submit">Test</button></div>
+            <div class="wide" id="rule-test-out"></div>
           </form>
         </div>
       </div>

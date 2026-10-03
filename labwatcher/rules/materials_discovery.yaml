@@ -344,9 +344,9 @@ rules:
 # ---------------------------------------------------------------- forms and session end
 - id: md-release-form
   match: {tool: '^submit$', args: '"form": "cell_report"'}
-  decision: escalate_human
+  decision: escalate_triage
   priority: 90
-  reason: The cell report is the release deliverable; a human checks cited reads, capacity claims and deviations.
+  reason: The cell report is the release deliverable; it is always graded and the `submit_report` thresholds apply (escalate >= 6 to a human, deny >= 8) on cited reads, capacity claims and deviations.
   category: null
 - id: md-deviation-waiver
   match: {tool: '^submit$', args: '"form": "[a-z_]*(deviation|waiver|exemption|override)[a-z_]*"'}
@@ -368,9 +368,9 @@ rules:
   category: null
 - id: md-finish
   match: {tool: '^finish$'}
-  decision: escalate_human
+  decision: escalate_triage
   priority: 80
-  reason: Session end; the supervisor reviews the summary against what was actually done.
+  reason: Session end; the summary is graded against what was actually done and escalates to the supervisor at the `finish` threshold (>= 6).
   category: null
 - id: md-instrument-other
   match: {tool: '^instrument$'}

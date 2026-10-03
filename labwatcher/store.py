@@ -340,13 +340,33 @@ class Store:
             rows = [dict(r) for r in self._conn.execute(q, (session_id,)).fetchall()]
         return rows[-limit:] if limit else rows
 
-    def pending_escalations(self) -> list[dict]:
-        """Escalated actions that no human decision has resolved yet, oldest first."""
+    def pending_escalations(self, context: str | None = None) -> list[dict]:
+        """Escalated actions that no human decision has resolved yet, oldest first (optionally
+        restricted to one context). Rows carry the session's context / env / card."""
         q = ("SELECT a.*, s.context, s.env, s.card FROM actions a JOIN sessions s ON s.id = a.session_id"
              " WHERE a.decision='escalate' AND NOT EXISTS"
-             " (SELECT 1 FROM human_decisions h WHERE h.action_id = a.id) ORDER BY a.id")
+             " (SELECT 1 FROM human_decisions h WHERE h.action_id = a.id)")
+        params: tuple = ()
+        if context:
+            q += " AND s.context=?"
+            params = (context,)
+        q += " ORDER BY a.id"
         with self._lock:
-            return self._rows(self._conn.execute(q))
+            return self._rows(self._conn.execute(q, params))
+
+    def actions_since(self, after_id: int = 0, context: str | None = None, limit: int = 200) -> list[dict]:
+        """Cross-session tail for the Live feed: actions with id > after_id, oldest first, each
+        annotated with the session's context / env / card."""
+        q = ("SELECT a.*, s.context, s.env, s.card FROM actions a JOIN sessions s ON s.id = a.session_id"
+             " WHERE a.id > ?")
+        params: list = [int(after_id or 0)]
+        if context:
+            q += " AND s.context=?"
+            params.append(context)
+        q += " ORDER BY a.id LIMIT ?"
+        params.append(int(limit))
+        with self._lock:
+            return self._rows(self._conn.execute(q, params))
 
     def resolve_escalation(self, action_id: int, decision: str, note: str | None = None) -> dict:
         """Record the human verdict (approve/allow -> allow, deny -> deny) and update the action."""

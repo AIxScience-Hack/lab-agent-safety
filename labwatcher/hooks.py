@@ -36,7 +36,7 @@ class WatchedLab:
         "lab", "watcher", "trailing", "store", "session_id", "context", "env", "transcript_provider",
         "on_escalate", "meta", "pending_suggestions", "decisions", "trailing_results", "human_history",
         "n_actions", "blocked_count", "escalated_count", "_transcript", "_started", "_ended",
-        "_transcript_idx", "max_transcript", "deny_unresolved_escalations",
+        "_transcript_idx", "max_transcript", "deny_unresolved_escalations", "precedent_provider",
     })
 
     def __init__(self, lab: Any, watcher: Watcher, trailing: TrailingMonitor | None = None,
@@ -44,8 +44,12 @@ class WatchedLab:
                  env: str | None = None, transcript_provider: Callable[[], list[dict]] | None = None,
                  on_escalate: Callable[[Action, Decision], str] | None = None,
                  meta: dict | None = None, max_transcript: int = 400,
-                 deny_unresolved_escalations: bool = True):
+                 deny_unresolved_escalations: bool = True,
+                 precedent_provider: Callable[[Action], str | None] | None = None):
         self.lab = lab
+        # Optional Amass "domain precedent" for the Stage 3 evaluator: called with the Action,
+        # returns text (or None) passed as Watcher.grade_action(..., precedent=...).
+        self.precedent_provider = precedent_provider
         self.watcher = watcher
         self.trailing = trailing
         self.store = store if store is not None else getattr(watcher, "store", None)
@@ -173,7 +177,16 @@ class WatchedLab:
                                   self.context, self.env, getattr(self.lab, "REPORT_FORM", None))
         self._note("assistant", f"[tool call] {tool} {_trunc(json.dumps(args, default=str), 2000)}")
         t0 = time.monotonic()
-        decision = self.watcher.grade_action(action, self.human_history)
+        precedent = None
+        if self.precedent_provider is not None:
+            try:
+                precedent = self.precedent_provider(action)
+            except Exception:  # noqa: BLE001  (enrichment must never block grading)
+                precedent = None
+        if precedent:
+            decision = self.watcher.grade_action(action, self.human_history, precedent=precedent)
+        else:
+            decision = self.watcher.grade_action(action, self.human_history)
         if decision.action == "escalate":
             decision = self._resolve_escalation(action, decision)
         if decision.escalated:

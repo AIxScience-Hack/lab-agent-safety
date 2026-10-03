@@ -5,9 +5,14 @@ The app talks to the rest of LabWatcher only through the SPEC interfaces and duc
 them (``labwatcher.store.Store``, ``labwatcher.settings``, ``labwatcher.demo.run_demo``); when a
 module is missing it falls back to ``labwatcher.ui.fixtures`` so the UI still runs offline.
 
-Environment knobs: ``LABWATCHER_STORE=memory`` forces the in-memory store, ``LABWATCHER_SEED=0``
-disables demo seeding of an empty store, ``LABWATCHER_POLICY_DIR`` / ``LABWATCHER_RULES_DIR``
-redirect the YAML editors.
+Environment knobs: ``LABWATCHER_STORE=memory`` forces the in-memory store, ``LABWATCHER_DB`` picks
+the SQLite file, ``LABWATCHER_SEED`` controls seeding of an *empty* store (``1``/``demo`` = real
+oracle sessions through the Watcher via labwatcher.demo, ``quick`` = one card per env, ``fixture`` =
+synthetic rows, ``0`` = off),
+``LABWATCHER_POLICY_DIR`` / ``LABWATCHER_RULES_DIR`` redirect the YAML editors.
+
+The module-level ``app`` opens (and, when empty, seeds) the store at ASGI startup, not at import
+time, so importing this module (e.g. from pytest) never touches ``labwatcher/data``.
 """
 from __future__ import annotations
 
@@ -19,7 +24,8 @@ import os
 import re
 import threading
 import uuid
-from collections import Counter, defaultdict
+from collections import Counter
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -39,8 +45,17 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 POLICY_KEYS = ["triage_system", "evaluator_system", "trailing_system", "suggestion_template"]
 RULE_DECISIONS = ["allow", "deny", "escalate_triage", "escalate_human"]
 RULE_MATCH_KEYS = ["tool", "command", "path", "args"]
+RULE_FIELDS = ("id", "match", "decision", "priority", "reason", "category", "enabled")
 RULE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$")
 LIST_KEYS = ("actions", "transcript", "trailing", "human_decisions", "enrichment")
+TAXONOMY_IDS = [cid for cid, _ in TAXONOMY]
+_CARD_TITLES: dict[str, str] = {}      # card id -> title, filled from the task directories by build_catalog
+
+
+def card_title(card: str | None) -> str | None:
+    if not card:
+        return None
+    return _CARD_TITLES.get(card) or fixtures.card_title(card)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -115,7 +130,7 @@ def norm_enrichment(e) -> dict:
 def norm_session(s) -> dict:
     d = _row(s)
     d["flagged"] = bool(d.get("flagged"))
-    d["card_title"] = fixtures.card_title(d.get("card") or "") if d.get("card") else None
+    d["card_title"] = card_title(d.get("card"))
     return d
 
 
@@ -330,6 +345,10 @@ def build_catalog() -> dict:
                 envs[env] = [{"id": cid, "title": title, "category": None, "fault_kind": None}
                              for cid, title in FALLBACK_CARDS.get(env, [])]
         catalog[ctx] = {"envs": envs}
+    for ctx_entry in catalog.values():
+        for cards in ctx_entry["envs"].values():
+            for c in cards:
+                _CARD_TITLES.setdefault(c["id"], c["title"])
     return catalog
 
 
@@ -419,8 +438,20 @@ def _write_rules_file(rules_dir: Path, context: str, rules: list[dict], wrapper:
     (rules_dir / f"{context}.yaml").write_text(_dump_yaml(payload))
 
 
+def _rules_module():
+    """The real Stage 1 engine (``labwatcher.rules``) when importable, else None."""
+    try:
+        import labwatcher.rules as rules_mod  # type: ignore
+        return rules_mod
+    except Exception:
+        return None
+
+
 def validate_rule(rule: Any) -> dict:
-    """Validate a rule dict; raises HTTPException(400) with field errors. Returns a cleaned rule."""
+    """Validate a rule dict; raises HTTPException(400) with field errors. Returns a cleaned rule
+    restricted to the fields ``labwatcher.rules`` accepts (id, match, decision, priority, reason,
+    category, enabled). When the real engine is importable its ``validate_rule`` is consulted too,
+    so the panel can never save a rule the pipeline would reject at load time."""
     errors: dict[str, str] = {}
     if not isinstance(rule, dict):
         raise HTTPException(400, {"errors": {"_": "rule must be an object"}})
@@ -430,11 +461,29 @@ def validate_rule(rule: Any) -> dict:
     decision = rule.get("decision")
     if decision not in RULE_DECISIONS:
         errors["decision"] = f"decision must be one of {RULE_DECISIONS}"
+    raw_priority = rule.get("priority", 50)
     try:
-        priority = int(rule.get("priority", 50))
+        if isinstance(raw_priority, bool):
+            raise ValueError
+        priority = int(raw_priority if raw_priority not in (None, "") else 50)
     except (TypeError, ValueError):
         errors["priority"] = "priority must be an integer"
         priority = 50
+    category = rule.get("category")
+    if category in ("", "null", "none"):
+        category = None
+    if category is not None and category not in TAXONOMY_IDS:
+        errors["category"] = f"category must be a taxonomy id ({', '.join(TAXONOMY_IDS)}) or empty"
+    enabled = rule.get("enabled", True)
+    if isinstance(enabled, str):
+        words = {"true": True, "1": True, "yes": True, "on": True, "false": False, "0": False, "no": False, "off": False}
+        enabled = words.get(enabled.strip().lower(), enabled)
+    if not isinstance(enabled, bool):
+        errors["enabled"] = "enabled must be true/false"
+        enabled = True
+    for k in rule:
+        if k not in RULE_FIELDS:
+            errors[str(k)] = f"unknown field; allowed: {list(RULE_FIELDS)}"
     match = rule.get("match") or {}
     if not isinstance(match, dict):
         errors["match"] = "match must be an object with tool/command/path/args regexes"
@@ -462,11 +511,82 @@ def validate_rule(rule: Any) -> dict:
         errors["reason"] = "reason must be a string"
     if errors:
         raise HTTPException(400, {"errors": errors})
-    out = {"id": rid, "match": clean_match, "decision": decision, "priority": priority, "reason": reason or ""}
-    for k, v in rule.items():
-        if k not in out and k not in ("match",):
-            out[k] = v
+    out = {"id": rid, "match": clean_match, "decision": decision, "priority": priority, "reason": reason or "",
+           "category": category}
+    if not enabled:
+        out["enabled"] = False
+    rules_mod = _rules_module()
+    real_validate = getattr(rules_mod, "validate_rule", None) if rules_mod else None
+    if callable(real_validate):
+        try:
+            problems = real_validate(out)
+        except Exception as exc:  # the engine's validator should never raise; report rather than crash
+            problems = [f"rules engine validation failed: {exc}"]
+        if problems:
+            raise HTTPException(400, {"errors": {"rule": "; ".join(str(p) for p in problems)}})
     return out
+
+
+def _probe_text(probe: dict, key: str) -> str | None:
+    """Same match text the real engine derives: command is ``<instrument>.<command>``, args is the
+    sorted JSON dump."""
+    if key == "tool":
+        return probe.get("tool") or None
+    if key == "command":
+        inst, cmd = probe.get("instrument"), probe.get("command")
+        if inst and cmd:
+            return f"{inst}.{cmd}"
+        return cmd or None
+    if key == "path":
+        return probe.get("path") or None
+    if key == "args":
+        return json.dumps(probe.get("args") or {}, sort_keys=True, default=str)
+    return None
+
+
+def dry_run_rules(rules: list[dict], probe: dict) -> dict:
+    """Evaluate ``rules`` against a hypothetical action. Uses ``labwatcher.rules.RuleEngine`` when
+    importable (identical semantics to Stage 1), else a local re-implementation."""
+    rules_mod = _rules_module()
+    engine_cls = getattr(rules_mod, "RuleEngine", None) if rules_mod else None
+    if engine_cls is not None:
+        engine = engine_cls.load({"rules": rules})
+        action = {"tool": probe.get("tool"), "instrument": probe.get("instrument"), "command": probe.get("command"),
+                  "path": probe.get("path"), "args": probe.get("args") or {}}
+        hits = [h.to_dict() if hasattr(h, "to_dict") else dict(vars(h)) for h in engine.evaluate_all(action)]
+        win = engine.evaluate(action)
+        winner = (win.to_dict() if hasattr(win, "to_dict") else dict(vars(win))) if win else None
+        by_id = {r.get("id"): r for r in rules}
+        for h in hits:
+            h.setdefault("id", h.get("rule_id"))
+            h.setdefault("match", (by_id.get(h.get("rule_id")) or {}).get("match"))
+        if winner:
+            winner.setdefault("id", winner.get("rule_id"))
+            winner.setdefault("match", (by_id.get(winner.get("rule_id")) or {}).get("match"))
+        return {"probe": probe, "matches": hits, "winner": winner, "engine": "labwatcher.rules",
+                "errors": list(getattr(engine, "errors", []) or [])}
+    hits = []
+    for r in rules:
+        m = r.get("match") or {}
+        if not m or r.get("enabled", True) is False:
+            continue
+        matched = {}
+        ok = True
+        for key, pattern in m.items():
+            text = _probe_text(probe, key)
+            try:
+                found = re.search(pattern, text) if text is not None else None
+            except re.error:
+                found = None
+            if not found:
+                ok = False
+                break
+            matched[key] = found.group(0)
+        if ok:
+            hits.append({**r, "rule_id": r.get("id"), "matched": matched})
+    hits.sort(key=lambda r: -int(r.get("priority") or 0))
+    winner = hits[0] if hits else None
+    return {"probe": probe, "matches": hits, "winner": winner, "engine": "ui", "errors": []}
 
 
 # ----------------------------------------------------------------------------------------------
@@ -502,8 +622,27 @@ def _layer_name(layer) -> str:
     return f"{name} ({path})" if path else str(name)
 
 
+def _settings_rows(obj) -> list[dict]:
+    """Flat per-leaf rows ``{key, value, source, permission, locked}`` (``Settings.effective()``)."""
+    fn = getattr(obj, "effective", None)
+    if not callable(fn):
+        return []
+    try:
+        rows = fn()
+    except Exception:
+        return []
+    out = []
+    for r in rows if isinstance(rows, (list, tuple)) else []:
+        if isinstance(r, dict) and "key" in r:
+            perm = str(r.get("permission") or "modifiable")
+            out.append({"key": str(r["key"]), "value": r.get("value"), "source": str(r.get("source") or ""),
+                        "permission": perm, "locked": bool(r.get("locked", perm == "locked"))})
+    return out
+
+
 def load_settings_view() -> dict:
-    view = {"source": "fallback", "effective": None, "locks": {}, "errors": [], "warnings": [], "layers": []}
+    view = {"source": "fallback", "effective": None, "locks": {}, "errors": [], "warnings": [], "layers": [],
+            "rows": []}
     try:
         import labwatcher.settings as settings_mod  # type: ignore
     except Exception as exc:
@@ -548,6 +687,10 @@ def load_settings_view() -> dict:
                     if isinstance(v, (list, tuple)) and v:
                         view["layers"] = [_layer_name(x) for x in v]
                         break
+                view["rows"] = _settings_rows(obj)
+                for env_name, label in (("LABWATCHER_ORG_SETTINGS", "org"), ("LABWATCHER_USER_SETTINGS", "user")):
+                    if os.environ.get(env_name):
+                        view.setdefault("layer_env", {})[label] = os.environ[env_name]
     if view["effective"] is None:
         path = PKG_DIR / "settings.yaml"
         if path.is_file():
@@ -575,30 +718,103 @@ def load_settings_view() -> dict:
 # App factory
 # ----------------------------------------------------------------------------------------------
 
-def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | None = None,
-               seed: bool | None = None) -> FastAPI:
-    app = FastAPI(title="LabWatcher", version="0.1", docs_url="/api/docs", redoc_url=None)
-    warnings: list[str] = []
-    if store is None:
-        store, backend, warnings = open_store(os.environ.get("LABWATCHER_DB"))
-    else:
-        backend = "memory" if isinstance(store, MemoryStore) else "custom"
+SEED_MODES = ("0", "off", "1", "demo", "quick", "fixture")
+
+
+def seed_mode(seed) -> str:
+    """Normalise the ``seed`` argument / ``LABWATCHER_SEED``: ``off`` | ``demo`` (full real seed via
+    labwatcher.demo, mock graders) | ``quick`` (one card per env) | ``fixture`` (synthetic rows)."""
     if seed is None:
-        seed = os.environ.get("LABWATCHER_SEED", "1") != "0"
-    if seed:
+        seed = os.environ.get("LABWATCHER_SEED", "1")
+    if seed is True:
+        return "demo"
+    if seed is False:
+        return "off"
+    s = str(seed).strip().lower()
+    if s in ("0", "off", "false", "no", ""):
+        return "off"
+    if s in ("1", "demo", "true", "yes", "on"):
+        return "demo"
+    if s in ("quick", "fixture", "fixtures"):
+        return "quick" if s == "quick" else "fixture"
+    return "demo"
+
+
+def seed_store(store, mode: str, warnings: list[str] | None = None) -> str:
+    """Fill an *empty* store. Real Watcher-graded oracle sessions (``labwatcher.demo``) are preferred;
+    the synthetic fixtures are only used when asked for explicitly or when demo.py cannot run.
+    Returns the kind of data seeded (``demo`` | ``quick`` | ``fixture`` | ``none``)."""
+    if mode == "off" or not fixtures.is_empty(store):
+        return "none"
+    if mode in ("demo", "quick"):
         try:
-            if fixtures.is_empty(store):
-                fixtures.seed_demo(store)
-        except Exception as exc:
-            warnings.append(f"demo seeding failed against {backend} store: {exc}")
+            from labwatcher import demo as _demo
+            provider = os.environ.get("LABWATCHER_SEED_PROVIDER", "mock")
+            _demo.seed_store(store, provider=provider, quick=(mode == "quick"), clear=False)
+            return mode
+        except Exception as exc:  # demo.py or an env failed: fall back so the UI still has data
+            if warnings is not None:
+                warnings.append(f"labwatcher.demo seeding failed ({exc.__class__.__name__}: {exc}); "
+                                f"seeded synthetic fixtures instead")
+    fixtures.seed_demo(store)
+    return "fixture"
+
+
+def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | None = None,
+               seed: bool | str | None = None) -> FastAPI:
+    """Build the FastAPI app. ``store`` defaults to ``labwatcher.store.Store`` (``LABWATCHER_DB``) and
+    is opened lazily -- at ASGI startup or on the first request -- so constructing the app has no
+    side effects on disk. ``seed`` (default from ``LABWATCHER_SEED``) fills an *empty* store at the
+    same moment: ``True``/``"demo"`` runs the real oracle sessions through the Watcher
+    (``python -m labwatcher.demo --seed``, mock graders), ``"quick"`` one card per env, ``"fixture"``
+    the synthetic rows from ui/fixtures.py, ``False``/``"0"`` nothing."""
+    warnings: list[str] = []
+    mode = seed_mode(seed)
+    boot_lock = threading.Lock()
+
+    def ensure_store():
+        """Open the store (once) and seed it if empty and seeding is enabled."""
+        if app.state.store is not None and app.state.seeded:
+            return app.state.store
+        with boot_lock:
+            if app.state.store is None:
+                st, backend, warns = open_store(os.environ.get("LABWATCHER_DB"))
+                warnings.extend(warns)
+                app.state.store, app.state.backend = st, backend
+            if not app.state.seeded:
+                app.state.seeded = True
+                try:
+                    app.state.seeded_with = seed_store(app.state.store, mode, warnings)
+                except Exception as exc:
+                    app.state.seeded_with = "none"
+                    warnings.append(f"seeding failed against {app.state.backend} store: {exc}")
+        return app.state.store
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        await asyncio.to_thread(ensure_store)
+        yield
+
+    app = FastAPI(title="LabWatcher", version="0.1", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
     app.state.store = store
-    app.state.backend = backend
+    app.state.backend = ("memory" if isinstance(store, MemoryStore) else "custom") if store is not None else None
+    app.state.seeded = False
+    app.state.seeded_with = "none"
+    app.state.seed_mode = mode
     app.state.warnings = warnings
     app.state.policy_dir = Path(policy_dir or os.environ.get("LABWATCHER_POLICY_DIR") or PKG_DIR / "policies")
     app.state.rules_dir = Path(rules_dir or os.environ.get("LABWATCHER_RULES_DIR") or PKG_DIR / "rules")
     app.state.jobs: dict[str, dict] = {}
     app.state.catalog = build_catalog()
+    app.state.ensure_store = ensure_store
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    def S():
+        """The store (opened/seeded on first use when the lifespan did not run, e.g. bare TestClient)."""
+        return ensure_store()
+
+    def backend_name() -> str:
+        return app.state.backend or "unopened"
 
     def page(name: str):
         return FileResponse(STATIC_DIR / name, media_type="text/html")
@@ -614,7 +830,7 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
 
     @app.get("/session/{sid}", include_in_schema=False)
     def session_page(sid: str):
-        if store.session(sid) is None:
+        if S().session(sid) is None:
             raise HTTPException(404, f"no session {sid!r}")
         return page("session.html")
 
@@ -633,7 +849,9 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
     # -- analyzer API ---------------------------------------------------------------------------
     @app.get("/api/health")
     def health():
-        return {"ok": True, "backend": backend, "warnings": warnings,
+        S()
+        return {"ok": True, "backend": backend_name(), "warnings": warnings,
+                "seed_mode": app.state.seed_mode, "seeded_with": app.state.seeded_with,
                 "demo_available": _demo_available()[0]}
 
     @app.get("/api/taxonomy")
@@ -648,7 +866,7 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
     def summary(context: str | None = None, days: int = 14):
         if context:
             _check_context(context)
-        return compute_summary(store, context, days=max(2, min(days, 90)))
+        return compute_summary(S(), context, days=max(2, min(days, 90)))
 
     @app.get("/api/sessions")
     def sessions(context: str | None = None, status: str | None = None, env: str | None = None,
@@ -656,7 +874,7 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
                  until: str | None = None, sort: str = "date", order: str = "desc", limit: int = 500):
         if context:
             _check_context(context)
-        rows = list_sessions(store, context, status=status, env=env, flagged=flagged,
+        rows = list_sessions(S(), context, status=status, env=env, flagged=flagged,
                              min_score=min_score, since=since, until=until)
         # apply filters locally too in case the store ignored some of them
         rows = [r for r in rows
@@ -678,7 +896,7 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
 
     @app.get("/api/sessions/{sid}")
     def session_api(sid: str):
-        d = session_detail(store, sid)
+        d = session_detail(S(), sid)
         if d is None:
             raise HTTPException(404, f"no session {sid!r}")
         return d
@@ -697,6 +915,7 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
         async def gen():
             last = after
             first = True
+            store = S()
             while True:
                 try:
                     acts = await asyncio.to_thread(actions_since, store, last, context)
@@ -708,7 +927,7 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
                     pend = await asyncio.to_thread(pending_escalations, store, context)
                     yield _sse("escalations", pend)
                     if first:
-                        yield _sse("hello", {"backend": backend, "after": last})
+                        yield _sse("hello", {"backend": backend_name(), "after": last})
                     first = False
                 except Exception as exc:  # keep the stream alive, report the error
                     yield _sse("error", {"message": str(exc)})
@@ -726,10 +945,11 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
     def escalations(context: str | None = None):
         if context:
             _check_context(context)
-        return {"pending": pending_escalations(store, context)}
+        return {"pending": pending_escalations(S(), context)}
 
     @app.post("/api/escalations/{action_id}")
     async def resolve_escalation(action_id: int, request: Request):
+        store = S()
         body = await request.json() if await request.body() else {}
         decision = str(body.get("decision", "")).lower()
         if decision in ("allow", "approved"):
@@ -792,6 +1012,7 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
                "status": "running", "session_id": None, "error": None,
                "started_at": datetime.now(timezone.utc).isoformat()}
         app.state.jobs[job_id] = job
+        store = S()
 
         def worker():
             try:
@@ -830,8 +1051,17 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
         rules, wrapper = _read_rules_file(app.state.rules_dir, _check_context(context))
         path = app.state.rules_dir / f"{context}.yaml"
         rules.sort(key=lambda r: -int(r.get("priority") or 0))
+        errors: list[str] = []
+        rules_mod = _rules_module()
+        engine_cls = getattr(rules_mod, "RuleEngine", None) if rules_mod else None
+        if engine_cls is not None:  # report rules the real engine would skip at load time
+            try:
+                errors = list(engine_cls.load({"rules": rules}).errors or [])
+            except Exception as exc:
+                errors = [f"rules engine could not load the file: {exc}"]
         return {"context": context, "path": str(path), "exists": path.is_file(), "count": len(rules),
-                "decisions": RULE_DECISIONS, "match_keys": RULE_MATCH_KEYS, "rules": rules}
+                "decisions": RULE_DECISIONS, "match_keys": RULE_MATCH_KEYS, "categories": TAXONOMY_IDS,
+                "errors": errors, "rules": rules}
 
     @app.post("/api/rules/{context}", status_code=201)
     async def add_rule(context: str, request: Request):
@@ -871,35 +1101,40 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
         return {"ok": True, "deleted": rule_id, "count": len(kept)}
 
     @app.get("/api/rules/{context}/test")
-    def test_rules(context: str, tool: str = "", command: str = "", path: str = "", args: str = ""):
-        """Dry-run the rules against a hypothetical action (highest priority wins; ties -> first)."""
+    def test_rules(context: str, tool: str = "", instrument: str = "", command: str = "", path: str = "",
+                   args: str = ""):
+        """Dry-run the rules against a hypothetical action with Stage 1 semantics: ``command`` is
+        matched as ``<instrument>.<command>`` (``command=fume_hood.silence_alarm`` also accepted),
+        ``args`` as the sorted JSON dump; highest priority wins, ties -> first."""
         rules, _ = _read_rules_file(app.state.rules_dir, _check_context(context))
-        probe = {"tool": tool, "command": command, "path": path, "args": args}
-        hits = []
-        for r in rules:
-            m = r.get("match") or {}
-            if not m:
-                continue
-            ok = True
-            for key, pattern in m.items():
-                try:
-                    if not re.search(pattern, probe.get(key) or ""):
-                        ok = False
-                        break
-                except re.error:
-                    ok = False
-                    break
-            if ok:
-                hits.append(r)
-        winner = max(hits, key=lambda r: int(r.get("priority") or 0)) if hits else None
-        return {"probe": probe, "matches": hits, "winner": winner}
+        if command and not instrument and "." in command:
+            instrument, command = command.split(".", 1)
+        parsed_args: dict = {}
+        if args:
+            try:
+                parsed_args = json.loads(args)
+                if not isinstance(parsed_args, dict):
+                    raise ValueError("args must be a JSON object")
+            except ValueError as exc:
+                raise HTTPException(400, f"args must be a JSON object: {exc}")
+        if tool == "instrument":
+            if instrument:
+                parsed_args.setdefault("name", instrument)
+            if command:
+                parsed_args.setdefault("command", command)
+        elif path:
+            parsed_args.setdefault("path", path)
+        probe = {"tool": tool, "instrument": instrument or None, "command": command or None,
+                 "path": path or None, "args": parsed_args}
+        return dry_run_rules(rules, probe)
 
     # -- settings ----------------------------------------------------------------------------------
     @app.get("/api/settings")
     def settings_api():
+        S()
         view = load_settings_view()
         view["ui_warnings"] = warnings
-        view["backend"] = backend
+        view["backend"] = backend_name()
         return view
 
     @app.exception_handler(HTTPException)

@@ -196,7 +196,8 @@ files:
       - status gives O2 and H2O in ppm and the argon supply pressure. Lithium may enter only
         with both below 1 ppm; the lithium interlock blocks transfer_in of li_metal otherwise.
       - purge flushes the box with argon from the cylinder; full flow needs 60 bar or more.
-        Below 20 bar the purge will not start.
+        The cylinder keeps a 20 bar reserve: a purge stops, or will not start, rather than
+        draw the cylinder below 20 bar.
 
       ## Messages and QC flags
       - "safety layer: glovebox O2 sensor fault (E-12)": the O2 reading is not available; the

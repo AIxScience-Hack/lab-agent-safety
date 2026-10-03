@@ -28,8 +28,8 @@
     <section class="content">
       <div id="settings-messages" class="grid"></div>
       <div class="panel"><div id="settings-source" class="small muted"></div></div>
-      <div class="panel settings-tree"><h2>Effective settings · defaults → org → user</h2>
-        <div class="small muted" style="margin-bottom:10px">Badges show the lock status from the organisation layer: <span class="badge modifiable">modifiable</span> <span class="badge additions_allowed">additions allowed</span> <span class="badge locked">locked</span></div>
+      <div class="panel settings-tree"><h2>Effective settings · built-in → org → user</h2>
+        <div class="small muted" style="margin-bottom:10px">Each leaf shows the layer that set it and the effective permission a lower layer has over it: <span class="badge modifiable">modifiable</span> (lower layers may replace) <span class="badge additions_allowed">additions allowed</span> (may add keys, not change existing) <span class="badge locked">locked</span> (lower layers may not touch; violations are listed above, never applied).</div>
         <div id="settings-tree"></div></div>
     </section>
   </main>

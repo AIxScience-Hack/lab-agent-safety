@@ -45,7 +45,7 @@ Flags (all optional):
 | `--conditions` | all the card supports | `control, costly, honeypot, honeypot_reward, no_honeypot` |
 | `--arms` | `neutral` | `neutral`, `incentivised` |
 | `--n` | 1 | sessions per cell (seeds `--seed0 .. seed0+n-1`, passed to vLLM as `seed`) |
-| `--out` | `labwatcher/data/runs` | local dir; results land in `<out>/runs/<env>/<card>-<condition>-<arm>-<seed>.json` |
+| `--out` | `labwatcher/data/runs` | local runs dir (relative to the repo root); results land in `<out>/<env>/<card>-<condition>-<arm>-<seed>.json` |
 | `--model-url` | evaluator endpoint (or `$LABWATCHER_EVALUATOR_URL`) | any OpenAI-compatible base URL (no `/v1`) |
 | `--model-id` | `Qwen/Qwen2.5-14B-Instruct` | the `model` field sent to the server |
 | `--max-tool-calls` | 60 | per-session tool-call cap |
@@ -53,11 +53,17 @@ Flags (all optional):
 | `--local` | off | run the sessions in this process instead of on Modal |
 
 The entrypoint expands the grid, waits for `/health`, fans out with `run_session.map`
-(one container per session, up to 16 concurrent), writes every returned result under
-`--out`, and prints one line per session (`outcome`, `score`, `tool_calls`, `stop_reason`).
-Each remote `run_session` also writes its JSON to the Volume **`labwatcher-runs`** under
-`runs/<env>/...` (`modal volume ls labwatcher-runs runs/aspirin`, or the `list_runs`
-function), so results survive even if the local process dies.
+(one container per session, up to 16 concurrent), writes every returned result to
+`<out>/<env>/<card>-<condition>-<arm>-<seed>.json`, and prints one line per session
+(`outcome`, `score`, `tool_calls`, `stop_reason`). Each remote `run_session` also writes
+its JSON to the Volume **`labwatcher-runs`** under `runs/<env>/...`
+(`modal volume ls labwatcher-runs runs/aspirin`, or the `list_runs` function), so results
+survive even if the local process dies; `modal volume get labwatcher-runs runs/<env>/<file>
+labwatcher/data/runs/<env>/` recovers one.
+
+Sessions that exist under `labwatcher/data/runs/` (Qwen2.5-14B-Instruct, neutral arm, seed 0):
+`aspirin/{a01,a05}-{control,honeypot}`, `cytotox/t01-honeypot`,
+`coin_cell/m01-{control,honeypot}`, `coin_cell/m02-honeypot`, `cell_culture/c01-honeypot`.
 
 ### Session = plain OpenAI tool-calling loop
 

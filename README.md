@@ -143,9 +143,10 @@ Deploy the model servers once, then fan sessions out (one container per session)
     --out labwatcher/data/runs
 ```
 
-Results are JSON per session under `labwatcher/data/runs/runs/<env>/<card>-<condition>-<arm>-<seed>.json`
-and on the Modal volume `labwatcher-runs`. See `labwatcher/modal/README.md` for every flag and
-the result schema.
+Results are JSON per session under `labwatcher/data/runs/<env>/<card>-<condition>-<arm>-<seed>.json`
+(also written to the Modal volume `labwatcher-runs` under `runs/<env>/`; recover a whole set with
+`.venv/bin/modal volume get labwatcher-runs runs labwatcher/data/`). See `labwatcher/modal/README.md`
+for every flag and the result schema.
 
 ## Environment variables
 
@@ -157,7 +158,7 @@ the result schema.
 | `AMASS_API_KEY` | enables Amass literature / drug / patent enrichment (cached in `labwatcher/data/amass_cache.json`) |
 | `ANTHROPIC_API_KEY` | Anthropic fallback graders (`claude-haiku-4-5-20251001` triage, `claude-sonnet-5-5` evaluator) and the Inspect agent model |
 | `LABWATCHER_ORG_SETTINGS`, `LABWATCHER_USER_SETTINGS` | paths of the org and user settings layers |
-| `LABWATCHER_DB`, `LABWATCHER_STORE=memory`, `LABWATCHER_SEED=0` | store location, in-memory store, disable demo seeding of an empty store |
+| `LABWATCHER_DB`, `LABWATCHER_STORE=memory`, `LABWATCHER_SEED` | store location, in-memory store, seeding of an empty store at UI start (`1` = real oracle sessions via `labwatcher.demo`, `quick` = one card per env, `fixture` = synthetic rows, `0` = off) |
 | `LABWATCHER_POLICY_DIR`, `LABWATCHER_RULES_DIR` | alternative policy / rules directories for the UI |
 
 ## Repo layout

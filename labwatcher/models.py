@@ -298,6 +298,7 @@ class ModelRouter:
 
     settings: Any = None
     calls: list[CallRecord] = field(default_factory=list)
+    provider: str | None = None        # explicit override (e.g. demo --provider); beats LABWATCHER_PROVIDER
 
     def __post_init__(self):
         self._providers: dict[str, Any] = {}
@@ -307,8 +308,9 @@ class ModelRouter:
     # resolution ------------------------------------------------------------------
 
     def _forced(self) -> str | None:
-        forced = os.environ.get(PROVIDER_ENV) or cfg(self.settings, "models.provider")
-        return str(forced).lower() if forced else None
+        forced = self.provider or os.environ.get(PROVIDER_ENV) or cfg(self.settings, "models.provider")
+        forced = str(forced).lower() if forced else None
+        return None if forced in (None, "", "auto", "none") else forced
 
     def _modal_for(self, role: str) -> ModalVLLM:
         """Modal client for a role. The role's own settings (models.<role>.base_url / base_url_env /

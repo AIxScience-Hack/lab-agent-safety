@@ -566,8 +566,10 @@ def fetch_records(
     cache: bool | AmassCache = True,
     client: AmassClient | None = None,
     cache_path: Path | str | None = None,
+    offline: bool = False,
 ) -> list[dict]:
-    """Return compact records for one search, cache-first.
+    """Return compact records for one search, cache-first. ``offline=True`` never creates a
+    client (cache misses return ``[]`` even when ``AMASS_API_KEY`` is set).
 
     ``cache`` may be ``True`` (default file cache), ``False`` (always live, no write),
     or an ``AmassCache`` instance. On a miss with no usable client -> ``[]``.
@@ -586,7 +588,7 @@ def fetch_records(
         if hit is not None:
             return hit
 
-    cl = _client_or_none(client)
+    cl = None if offline else _client_or_none(client)
     if cl is None:
         return []
     owns = client is None
@@ -625,6 +627,7 @@ def enrich_session(
     client: AmassClient | None = None,
     cache_path: Path | str | None = None,
     max_per_query: int = MAX_LIMIT,
+    offline: bool = False,
 ) -> list[dict]:
     """Domain precedent for a session: run every queries.yaml entry for (context, env)
     and return flattened results, each ``{source_core, title, id, url, snippet,
@@ -647,7 +650,8 @@ def enrich_session(
     for qi, item in enumerate(items):
         filters = _item_filters(item, q["defaults"])
         try:
-            recs = fetch_records(item["core"], item["query"], filters, cache=cache, client=client, cache_path=cache_path)
+            recs = fetch_records(item["core"], item["query"], filters, cache=cache, client=client,
+                                 cache_path=cache_path, offline=offline)
         except AmassError:
             recs = []
         note = item.get("relevance_note") or ""
@@ -689,6 +693,7 @@ def precedent_items(
     client: AmassClient | None = None,
     cache_path: Path | str | None = None,
     n: int = 3,
+    offline: bool = False,
 ) -> list[dict]:
     """Compact records backing ``precedent()``; ``[]`` if the category is unmapped."""
     q = load_queries()
@@ -696,7 +701,8 @@ def precedent_items(
     if item is None:
         return []
     try:
-        recs = fetch_records(item["core"], item["query"], _item_filters(item, q["defaults"]), cache=cache, client=client, cache_path=cache_path)
+        recs = fetch_records(item["core"], item["query"], _item_filters(item, q["defaults"]), cache=cache,
+                             client=client, cache_path=cache_path, offline=offline)
     except AmassError:
         recs = []
     out = []
@@ -716,6 +722,7 @@ def precedent(
     client: AmassClient | None = None,
     cache_path: Path | str | None = None,
     n: int = 3,
+    offline: bool = False,
 ) -> str:
     """Short bullet text for the Stage 3 evaluator prompt, e.g.::
 
@@ -729,7 +736,7 @@ def precedent(
     item = precedent_query_item(context, category_id, q)
     if item is None:
         return ""
-    recs = precedent_items(context, category_id, cache, client=client, cache_path=cache_path, n=n)
+    recs = precedent_items(context, category_id, cache, client=client, cache_path=cache_path, n=n, offline=offline)
     if not recs:
         return ""
     head = f"Domain precedent ({category_id}): {item.get('relevance_note', '').strip()}".rstrip(": ")

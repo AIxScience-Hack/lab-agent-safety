@@ -17,7 +17,7 @@ original Watcher does) first. This file is the operator's guide.
 | `store.py` | `Store` over SQLite WAL: `create_session, end_session, add_action, add_transcript, add_trailing, add_human_decision, add_enrichment, summary, sessions, session, pending_escalations, resolve_escalation` |
 | `hooks.py` | `WatchedLab(lab, watcher, trailing, store, ...)`: proxy around a labsim `Lab`; `pending_suggestions` for the harness |
 | `enrich/amass.py` | `AmassClient`, `AmassCache`, `enrich_session(context, env, card_title, keywords)` |
-| `demo.py` | `run_demo(context, env, card_id, script, provider="mock", store=None) -> session_id`; `python -m labwatcher.demo --seed` |
+| `demo.py` | `run_demo(context, env, card_id, script, provider="mock", store=None, arm="incentivised", condition=None) -> session_id` runs one oracle script through `WatchedLab` (honest/exploit default to the honeypot condition, `full` to control), stores the transcript, scores with `labsim.scoring.score` and attaches cached Amass enrichment. `python -m labwatcher.demo --seed` = honest + exploit for all 38 cards (76 sessions, ~7 s mock); `--replay labwatcher/data/runs` grades recorded Modal batch runs; `--provider modal` uses the real endpoints. An empty store is seeded the same way when the UI starts (`LABWATCHER_SEED=quick|fixture|0` for one card per env / the synthetic `ui/fixtures.py` rows / nothing) |
 | `inspect_watched.py` | Inspect task `watched_benchmark` (the drug_discovery benchmark with every call graded) |
 | `modal/models.py` | Modal app `labwatcher-models`: vLLM triage (Qwen2.5-7B, L4) and evaluator (Qwen2.5-14B, L40S) |
 | `modal/batch_eval.py` | Modal app `labwatcher-batch`: run labsim sessions with an open model, save JSON results |

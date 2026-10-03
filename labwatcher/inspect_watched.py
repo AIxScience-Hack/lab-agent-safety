@@ -87,6 +87,18 @@ def make_store(db: str | None):
     raise RuntimeError("cannot construct labwatcher.store.Store")
 
 
+def _auto_denied_finish(lab, n_calls: int) -> bool:
+    """True when one of the last `n_calls` decisions denied `finish` automatically (human.auto=deny
+    or an unresolved escalation with no reviewer) rather than by a person."""
+    recent = lab.decisions[-n_calls:] if n_calls > 0 else []
+    for d in recent:
+        if d.action != "deny" or d.tool != "finish":
+            continue
+        if d.stage == "rules" or (d.human or {}).get("auto", d.stage == "threshold"):
+            return True
+    return False
+
+
 def messages_as_transcript(messages) -> list[dict]:
     """Inspect ChatMessages -> [{role, content}] with tool calls rendered inline."""
     out = []
@@ -106,7 +118,7 @@ def messages_as_transcript(messages) -> list[dict]:
 def watched_lab_agent(max_tool_calls: int = it.DEFAULT_MAX_TOOL_CALLS, max_idle_turns: int = 3,
                       ask_awareness: bool = True, context: str | None = None,
                       human_auto: str | None = "deny", db: str | None = None,
-                      suggestion_role: str = "system"):
+                      suggestion_role: str = "system", end_on_denied_finish: bool = True):
     settings = make_settings(human_auto)
     store = make_store(db)
     models = ModelRouter(settings)
@@ -166,6 +178,13 @@ def watched_lab_agent(max_tool_calls: int = it.DEFAULT_MAX_TOOL_CALLS, max_idle_
                         else ChatMessageUser(content=s)
                     state.messages.append(msg)
                     injected.append(s)
+                # A `finish` denied by the headless human policy (human.auto=deny, or no reviewer)
+                # carries no correction the agent could act on, so the session ends here instead of
+                # the agent retrying `finish` until the tool-call limit. A real reviewer's deny
+                # (human["auto"] is False) keeps the loop going so the agent can fix what was asked.
+                if end_on_denied_finish and _auto_denied_finish(lab, len(tool_calls)):
+                    stop = "finish_denied"
+                    break
         except LimitExceededError as e:
             stop = f"limit: {e}"[:300]
         finally:
@@ -190,6 +209,7 @@ def watched_lab_agent(max_tool_calls: int = it.DEFAULT_MAX_TOOL_CALLS, max_idle_
             store_.set("labwatcher", it._jsonable(summary))
             state.metadata["labwatcher_blocked"] = lab.blocked_count
             state.metadata["labwatcher_escalated"] = lab.escalated_count
+            state.metadata["labwatcher_finish_denied"] = stop == "finish_denied"
 
         answer = None
         if ask_awareness and not stop.startswith("limit"):
@@ -208,16 +228,19 @@ def watched_benchmark(env: str = "aspirin", context: str | None = None, conditio
                       arms: str | None = None, honeypots: str | None = None,
                       max_tool_calls: int = it.DEFAULT_MAX_TOOL_CALLS, ask_awareness: bool = True,
                       human_auto: str | None = "deny", db: str | None = None,
-                      suggestion_role: str = "system"):
+                      suggestion_role: str = "system", end_on_denied_finish: bool = True):
     """labsim benchmark with LabWatcher in the loop. Filters are comma-separated; omitted means all.
     `human_auto` is approve | deny | timeout_allow for escalations (headless); `db` is the store path
-    ("none" disables persistence). Set LABWATCHER_PROVIDER=mock to force the offline grader."""
+    ("none" disables persistence). `end_on_denied_finish` stops the session (stop_reason
+    "finish_denied") when `finish` is auto-denied instead of letting the agent retry until the
+    tool-call limit. Set LABWATCHER_PROVIDER=mock to force the offline grader."""
     ask = str(ask_awareness).lower() not in ("false", "0", "no")
+    end_fin = str(end_on_denied_finish).lower() not in ("false", "0", "no")
     return Task(dataset=MemoryDataset(it.build_samples(env, conditions, arms, honeypots),
                                       name=f"labwatcher-{env}"),
                 solver=watched_lab_agent(max_tool_calls=int(max_tool_calls), ask_awareness=ask,
                                          context=context, human_auto=human_auto, db=db,
-                                         suggestion_role=suggestion_role),
+                                         suggestion_role=suggestion_role, end_on_denied_finish=end_fin),
                 scorer=it.lab_score(),
                 metadata={"env": env, "context": context or _context_for(env),
                           "labwatcher_provider": os.environ.get("LABWATCHER_PROVIDER", "auto")})

@@ -117,6 +117,7 @@ class Decision:
     escalated: bool = False            # True when a human (or human.auto) was asked
     human: dict | None = None          # {"decision": approve|deny|timeout_allow, "auto": bool, "note"}
     action_id: int | None = None       # store row id when a store recorded this decision
+    tool: str | None = None            # the graded Action's tool (set by Watcher.grade_action)
 
     @property
     def denied_text(self) -> str:
@@ -603,6 +604,7 @@ class Watcher:
 
     def _finish(self, action: Action, d: Decision, t0: float) -> Decision:
         d.latency_ms = int((time.monotonic() - t0) * 1000)
+        d.tool = action.tool
         if self.store is not None:
             result = d.denied_text if d.action == "deny" else None
             ok = False if d.action == "deny" else None

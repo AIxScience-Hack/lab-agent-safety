@@ -270,7 +270,12 @@
       $('#trailing').innerHTML = tr.length ? `<div class="chart" id="radar">${radar(tr[tr.length - 1].scores)}</div><div class="small muted" style="text-align:center">latest window · dashed ring = suggestion threshold 7</div>
         <table style="margin-top:8px"><thead><tr><th>At action</th><th>Nine categories</th><th>Top</th></tr></thead><tbody>${tr.map(t => `<tr><td class="mono">#${t.at_action}</td><td>${sparkbars(t.scores)}</td><td>${scoreChip(t.max_score)} <span class="small">${esc(TAXONOMY_LABEL[t.top_category] || t.top_category || '')}</span></td></tr>
         <tr><td></td><td colspan="2" class="small muted">${esc(t.reason)}${t.suggestion ? `<details><summary>suggestion injected</summary><pre>${esc(t.suggestion)}</pre></details>` : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No trailing reviews yet.</div>';
-      $('#human').innerHTML = d.human_decisions.length ? d.human_decisions.map(h => `<div class="item">${decisionChip(h.decision === 'approve' ? 'allow' : h.decision)} <span class="mono small">action ${h.action_id}</span> <span class="muted small">${fmtDate(h.ts)}</span>${h.note ? `<div class="small">${esc(h.note)}</div>` : ''}</div>`).join('') : '<div class="empty">No human decisions.</div>';
+      const actById = {}; d.actions.forEach(a => { actById[a.id] = a; });
+      $('#human').innerHTML = d.human_decisions.length ? d.human_decisions.map(h => {
+        const a = actById[h.action_id] || {};
+        const call = h.action_tool || a.tool ? `${esc(h.action_tool || a.tool)}(${esc(h.action_instrument || a.instrument ? `${h.action_instrument || a.instrument}.${h.action_command || a.command}` : (a.path || ''))})` : `action ${h.action_id}`;
+        return `<div class="item">${decisionChip(h.decision === 'approve' ? 'allow' : h.decision)} <a class="mono small" href="#action-${h.action_id}">#${h.action_seq != null ? h.action_seq : (a.seq != null ? a.seq : h.action_id)} ${call}</a> ${scoreChip(h.action_score != null ? h.action_score : a.score)} <span class="muted small">${fmtDate(h.ts)}</span>${h.note ? `<div class="small" style="margin-top:3px">${esc(h.note)}</div>` : ''}</div>`;
+      }).join('') : '<div class="empty">No human decisions.</div>';
       const en = d.enrichment;
       $('#enrichment').innerHTML = en.length ? en.map(e => `<div class="item"><div class="m"><span class="badge source">${esc(e.source)}</span> <span class="mono">${esc(e.query)}</span></div>
         ${(Array.isArray(e.result) ? e.result : (e.result && e.result.items) || []).map(r => `<div style="margin-top:4px">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.name || r.url)}</a>` : esc(r.title || r.name || JSON.stringify(r))} <span class="muted small">${esc([r.kind, r.year, r.assignee, r.modality].filter(Boolean).join(' · '))}</span></div>`).join('')}</div>`).join('') : '<div class="empty">No Amass enrichment for this session.</div>';
@@ -308,18 +313,27 @@
   // ---- page: rules -------------------------------------------------------------------------------------
   function initRules() {
     const table = $('#rules-table'), form = $('#rule-form'), status = $('#rules-status'), testOut = $('#rule-test-out');
-    let rules = [];
+    let rules = [], filter = '';
+    function renderTable() {
+      const q = filter.trim().toLowerCase();
+      const shown = q ? rules.filter(x => [x.id, x.decision, x.reason, x.category, ...Object.values(x.match || {})].join(' ').toLowerCase().includes(q)) : rules;
+      table.innerHTML = `<thead><tr><th class="right">Priority</th><th>ID</th><th>Decision</th><th>Match (regex)</th><th>Category</th><th>Reason</th><th></th></tr></thead><tbody>${shown.length ? shown.map(x => `<tr data-id="${esc(x.id)}" style="${x.enabled === false ? 'opacity:.45' : ''}">
+        <td class="right mono">${x.priority}</td><td class="mono">${esc(x.id)}${x.enabled === false ? '<div class="small muted">disabled</div>' : ''}</td><td>${decisionChip(x.decision)}</td>
+        <td>${Object.entries(x.match || {}).map(([k, v]) => `<div><span class="muted small">${k}</span> <code>${esc(v)}</code></div>`).join('')}</td>
+        <td>${x.category ? cats([x.category]) : '<span class="muted">—</span>'}</td>
+        <td class="small">${esc(x.reason || '')}</td><td class="nowrap"><button data-act="edit">Edit</button> <button data-act="delete" class="danger">Delete</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">No rules match the filter.</td></tr>'}</tbody>`;
+    }
     async function load() {
       const r = await api(`/api/rules/${ctx()}`); rules = r.rules;
       $('#rules-path').innerHTML = `<span class="mono">${esc(r.path)}</span> ${r.exists ? '' : '<span class="badge additions_allowed">not on disk yet — showing built-in fallback</span>'} · ${r.count} rules`;
+      $('#rules-errors').innerHTML = (r.errors || []).map(e => `<div class="notice error small" style="margin-bottom:6px">rules engine would skip: ${esc(e)}</div>`).join('');
       $('select[name=decision]', form).innerHTML = r.decisions.map(d => `<option>${d}</option>`).join('');
-      table.innerHTML = `<thead><tr><th>Priority</th><th>ID</th><th>Decision</th><th>Match (regex)</th><th>Reason</th><th></th></tr></thead><tbody>${rules.map(x => `<tr data-id="${esc(x.id)}">
-        <td class="right mono">${x.priority}</td><td class="mono">${esc(x.id)}</td><td>${decisionChip(x.decision)}</td>
-        <td>${Object.entries(x.match || {}).map(([k, v]) => `<div><span class="muted small">${k}</span> <code>${esc(v)}</code></div>`).join('')}</td>
-        <td class="small">${esc(x.reason || '')}</td><td class="nowrap"><button data-act="edit">Edit</button> <button data-act="delete" class="danger">Delete</button></td></tr>`).join('')}</tbody>`;
+      $('select[name=category]', form).innerHTML = `<option value="">— none —</option>` + (r.categories || TAXONOMY_IDS).map(c => `<option value="${c}">${c} · ${esc(TAXONOMY_LABEL[c] || c)}</option>`).join('');
+      renderTable();
     }
     function fill(x) {
       $('input[name=id]', form).value = x.id || ''; $('input[name=priority]', form).value = x.priority == null ? 50 : x.priority; $('select[name=decision]', form).value = x.decision || 'allow';
+      $('select[name=category]', form).value = x.category || ''; $('input[name=enabled]', form).checked = x.enabled !== false;
       ['tool', 'command', 'path', 'args'].forEach(k => { $(`input[name=match_${k}]`, form).value = (x.match || {})[k] || ''; });
       $('input[name=reason]', form).value = x.reason || ''; form.dataset.editing = x.id || ''; $('#rule-submit').textContent = x.id ? `Save ${x.id}` : 'Add rule';
     }
@@ -328,9 +342,12 @@
       if (b.dataset.act === 'edit') { fill(rules.find(r => r.id === id)); form.scrollIntoView({ behavior: 'smooth' }); }
       else if (confirm(`Delete rule ${id}?`)) { try { await api(`/api/rules/${ctx()}/${encodeURIComponent(id)}`, { method: 'DELETE' }); notice(status, `Deleted ${id}`, 'ok'); load(); } catch (err) { notice(status, err.message, 'error'); } }
     });
+    $('#rules-filter').addEventListener('input', e => { filter = e.target.value; renderTable(); });
     form.addEventListener('submit', async e => {
       e.preventDefault();
       const body = { id: $('input[name=id]', form).value.trim(), priority: Number($('input[name=priority]', form).value), decision: $('select[name=decision]', form).value, reason: $('input[name=reason]', form).value, match: {} };
+      const cat = $('select[name=category]', form).value; if (cat) body.category = cat;
+      if (!$('input[name=enabled]', form).checked) body.enabled = false;
       ['tool', 'command', 'path', 'args'].forEach(k => { const v = $(`input[name=match_${k}]`, form).value; if (v) body.match[k] = v; });
       const editing = form.dataset.editing;
       try {
@@ -340,9 +357,17 @@
     });
     $('#rule-reset').addEventListener('click', () => fill({}));
     $('#rule-test').addEventListener('submit', async e => {
-      e.preventDefault(); const f = e.target; const q = new URLSearchParams({ tool: f.tool.value, command: f.command.value, path: f.path.value });
-      const r = await api(`/api/rules/${ctx()}/test?${q}`);
-      testOut.innerHTML = r.winner ? `winner: ${decisionChip(r.winner.decision)} <span class="mono">${esc(r.winner.id)}</span> (priority ${r.winner.priority}) · ${r.matches.length} match(es) · <span class="muted">${esc(r.winner.reason || '')}</span>` : '<span class="muted">no rule matches — falls through to triage</span>';
+      e.preventDefault(); const f = e.target;
+      const q = new URLSearchParams({ tool: f.tool.value, instrument: f.instrument.value, command: f.command.value, path: f.path.value, args: f.args.value });
+      try {
+        const r = await api(`/api/rules/${ctx()}/test?${q}`);
+        const probe = `${esc(r.probe.tool)}(${r.probe.tool === 'instrument' ? esc((r.probe.instrument || '?') + '.' + (r.probe.command || '?')) : esc(r.probe.path || '')})`;
+        testOut.innerHTML = (r.winner
+          ? `<div class="notice ${r.winner.decision === 'deny' ? 'error' : r.winner.decision === 'allow' ? 'ok' : 'warn'}"><span class="mono">${probe}</span> → ${decisionChip(r.winner.decision)} by <span class="mono">${esc(r.winner.id)}</span> (priority ${r.winner.priority})<div class="small" style="margin-top:4px">${esc(r.winner.reason || '')}</div></div>`
+          : `<div class="notice"><span class="mono">${probe}</span> → no rule matches; the action falls through to triage</div>`)
+          + (r.matches.length ? `<table style="margin-top:8px"><thead><tr><th class="right">Priority</th><th>Rule</th><th>Decision</th><th>Matched text</th></tr></thead><tbody>${r.matches.map(m => `<tr><td class="right mono">${m.priority}</td><td class="mono">${esc(m.id)}</td><td>${decisionChip(m.decision)}</td><td class="small">${Object.entries(m.matched || {}).map(([k, v]) => `<span class="muted">${k}</span> <code>${esc(v)}</code>`).join(' ')}</td></tr>`).join('')}</tbody></table>` : '')
+          + `<div class="small muted" style="margin-top:4px">engine: ${esc(r.engine)}</div>`;
+      } catch (err) { testOut.innerHTML = `<div class="notice error">${esc(err.message)}</div>`; }
     });
     document.addEventListener('lw:context', () => { fill({}); load(); });
     fill({}); load();
@@ -354,14 +379,32 @@
       const msgs = [];
       (v.errors || []).forEach(e => msgs.push(`<div class="notice error">error: ${esc(e)}</div>`));
       (v.warnings || []).concat(v.ui_warnings || []).forEach(w => msgs.push(`<div class="notice warn">${esc(w)}</div>`));
-      $('#settings-messages').innerHTML = msgs.join('') || '<div class="notice ok">Settings loaded without errors.</div>';
-      $('#settings-source').innerHTML = `source: <span class="badge source">${esc(v.source)}</span> · store backend: <b>${esc(v.backend)}</b>${(v.layers || []).length ? `<div class="small muted" style="margin-top:4px">layers: ${v.layers.map(esc).join(' → ')}</div>` : ''}`;
+      $('#settings-messages').innerHTML = msgs.join('') || '<div class="notice ok">Settings loaded without errors or warnings.</div>';
+      const envs = v.layer_env || {};
+      $('#settings-source').innerHTML = `source: <span class="badge source">${esc(v.source)}</span> · store backend: <b>${esc(v.backend)}</b>`
+        + `${(v.layers || []).length ? `<div class="small muted" style="margin-top:4px">layers loaded: ${v.layers.map(esc).join(' → ')}</div>` : ''}`
+        + `<div class="small muted" style="margin-top:4px">org layer: <code>LABWATCHER_ORG_SETTINGS</code>${envs.org ? ` = ${esc(envs.org)}` : ' (unset)'} · user layer: <code>LABWATCHER_USER_SETTINGS</code>${envs.user ? ` = ${esc(envs.user)}` : ' (unset)'}</div>`;
       const eff = v.effective || {}, locks = v.locks || {};
       const lockOf = k => { const l = locks[k]; return typeof l === 'string' ? l : (l && (l.status || l.permission || l.mode)) || 'modifiable'; };
-      $('#settings-tree').innerHTML = Object.entries(eff).filter(([k]) => !['permissions', 'locks', '_permissions'].includes(k)).map(([k, val]) => `<div class="section"><h3>${esc(k)} <span class="badge ${esc(lockOf(k))}">${esc(lockOf(k).replace('_', ' '))}</span></h3>${renderVal(val, k)}</div>`).join('');
+      const badge = p => `<span class="badge ${esc(p)}">${esc(String(p).replace('_', ' '))}</span>`;
+      const sections = Object.keys(eff).filter(k => !['permissions', 'locks', '_permissions'].includes(k));
+      if (v.rows && v.rows.length) {
+        // real loader: one row per leaf with the layer that set it and the effective permission
+        const bySection = {}; v.rows.forEach(r => { const top = r.key.split('.')[0]; (bySection[top] = bySection[top] || []).push(r); });
+        $('#settings-tree').innerHTML = sections.map(k => {
+          const rows = bySection[k] || [];
+          const nLocked = rows.filter(r => r.locked).length;
+          return `<div class="section"><h3>${esc(k)} ${badge(lockOf(k))}${nLocked && lockOf(k) !== 'locked' ? `<span class="small muted">${nLocked} locked leaf${nLocked > 1 ? 's' : ''}</span>` : ''}</h3>
+            <table><thead><tr><th>key</th><th>value</th><th>set by</th><th>permission</th></tr></thead><tbody>${rows.map(r => `<tr>
+              <td>${esc(r.key.slice(k.length + 1) || r.key)}</td><td>${typeof r.value === 'object' ? `<pre>${esc(JSON.stringify(r.value))}</pre>` : `<code>${esc(JSON.stringify(r.value))}</code>`}</td>
+              <td><span class="badge source">${esc(r.source)}</span></td><td>${badge(r.permission)}</td></tr>`).join('')}</tbody></table></div>`;
+        }).join('');
+      } else {
+        $('#settings-tree').innerHTML = sections.map(k => `<div class="section"><h3>${esc(k)} ${badge(lockOf(k))}</h3>${renderVal(eff[k], k)}</div>`).join('');
+      }
       function renderVal(val, prefix) {
         if (val && typeof val === 'object' && !Array.isArray(val)) {
-          return `<table><tbody>${Object.entries(val).map(([k, v]) => `<tr><td>${esc(k)}${locks[`${prefix}.${k}`] ? ` <span class="badge ${esc(lockOf(prefix + '.' + k))}">${esc(lockOf(prefix + '.' + k))}</span>` : ''}</td><td>${v && typeof v === 'object' ? `<pre>${esc(JSON.stringify(v))}</pre>` : `<code>${esc(JSON.stringify(v))}</code>`}</td></tr>`).join('')}</tbody></table>`;
+          return `<table><tbody>${Object.entries(val).map(([k, v]) => `<tr><td>${esc(k)}${locks[`${prefix}.${k}`] ? ` ${badge(lockOf(prefix + '.' + k))}` : ''}</td><td>${v && typeof v === 'object' ? `<pre>${esc(JSON.stringify(v))}</pre>` : `<code>${esc(JSON.stringify(v))}</code>`}</td></tr>`).join('')}</tbody></table>`;
         }
         return `<code>${esc(JSON.stringify(val))}</code>`;
       }

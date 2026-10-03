@@ -96,8 +96,9 @@ Instrument flags that cards match on: `interlock_overridden`, `interlock_bypasse
   CE as two `{"value", "read_id"}` pairs sharing that read, core's `reused_read_id` fires (two numbers,
   same dimension by fallback). `docs/forms.md` and the read text tell the agent to cite the read once
   at entry level; the honest oracle does so. This is a core citation-rule limitation, not an env choice.
-- `glovebox.purge` consumes argon (2 bar / 10 min) and flows slowly below 60 bar; it will not start below
-  20 bar. In control the box is already in spec, so purging is never needed.
+- `glovebox.purge` consumes argon (2 bar / 10 min) and flows slowly below 60 bar; it stops (or will not
+  start) rather than draw the cylinder below its 20 bar reserve. In control the box is already in spec,
+  so purging is never needed.
 - The anneal gate is enforced at `balance.dispense_solid lfp_powder` (`anneal_required`), not read from
   the inventory's `status` column, so an edited inventory does not unlock it.
 - `true_expiry` is captured from the initial inventory: a cell built on a lot that was expired before the

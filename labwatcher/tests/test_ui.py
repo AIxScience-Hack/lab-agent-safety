@@ -35,7 +35,7 @@ def client(tmp_path: Path, request):
         store = Store(":memory:")
     else:
         store = MemoryStore()
-    app = create_app(store=store, policy_dir=tmp_path / "policies", rules_dir=tmp_path / "rules", seed=True)
+    app = create_app(store=store, policy_dir=tmp_path / "policies", rules_dir=tmp_path / "rules", seed="fixture")
     with TestClient(app) as c:
         c.store = store
         c.tmp = tmp_path
@@ -279,8 +279,8 @@ def test_rules_crud_and_validation(client):
     r = client.get("/api/rules/drug_discovery").json()
     assert r["exists"] is False and r["count"] > 0
     assert r["rules"] == sorted(r["rules"], key=lambda x: -x["priority"])
-    rule = {"id": "no_curl", "match": {"tool": "^instrument$", "command": "^purge_"}, "decision": "escalate_human",
-            "priority": 77, "reason": "Purging shared gas lines needs a human."}
+    rule = {"id": "no_curl", "match": {"tool": "^instrument$", "command": "\\.purge_"}, "decision": "escalate_human",
+            "priority": 77, "reason": "Purging shared gas lines needs a human.", "category": "hazard_release"}
     r = client.post("/api/rules/drug_discovery", json=rule)
     assert r.status_code == 201, r.text
     path = client.tmp / "rules" / "drug_discovery.yaml"
@@ -301,17 +301,51 @@ def test_rules_crud_and_validation(client):
     assert r.status_code == 200 and r.json()["priority"] == 99
     assert next(x for x in client.get("/api/rules/drug_discovery").json()["rules"] if x["id"] == "no_curl")["reason"] == "edited"
     assert client.put("/api/rules/drug_discovery/ghost", json=rule).status_code == 404
-    # dry run picks the highest priority match
+    # dry run picks the highest priority match; command text is "<instrument>.<command>" like Stage 1
+    t = client.get("/api/rules/drug_discovery/test?tool=instrument&instrument=gas_manifold&command=purge_line").json()
+    assert t["winner"]["id"] == "no_curl" and t["winner"]["rule_id"] == "no_curl"
+    assert any(m["id"] == "no_curl" for m in t["matches"])
+    t = client.get("/api/rules/drug_discovery/test?tool=instrument&command=fume_hood.silence_alarm").json()
+    assert t["winner"]["decision"] == "deny" and t["probe"]["instrument"] == "fume_hood"
     t = client.get("/api/rules/drug_discovery/test?tool=instrument&command=purge_line").json()
-    assert t["winner"]["id"] == "no_curl"
-    t = client.get("/api/rules/drug_discovery/test?tool=instrument&command=silence_alarm").json()
-    assert t["winner"]["decision"] == "deny"
+    assert t["winner"] is None  # no instrument -> no command text -> nothing matches
+    assert client.get("/api/rules/drug_discovery/test?tool=instrument&args=notjson").status_code == 400
     # delete
     assert client.delete("/api/rules/drug_discovery/no_curl").status_code == 200
     assert client.delete("/api/rules/drug_discovery/no_curl").status_code == 404
     assert not any(x["id"] == "no_curl" for x in yaml.safe_load(path.read_text()))
     # materials rules file untouched
     assert not (client.tmp / "rules" / "materials_discovery.yaml").exists()
+
+
+def test_rules_category_enabled_and_engine_parity(client):
+    """category must be a taxonomy id, enabled=false rules are kept but ignored by the dry run, and
+    the saved file loads cleanly in the real RuleEngine when it is importable."""
+    base = {"id": "cat_rule", "match": {"tool": "^instrument$", "command": "\\.vent_"}, "decision": "deny", "priority": 90}
+    bad = client.post("/api/rules/materials_discovery", json=dict(base, category="nope"))
+    assert bad.status_code == 400 and "category" in bad.json()["errors"]
+    bad = client.post("/api/rules/materials_discovery", json=dict(base, extra_field=1))
+    assert bad.status_code == 400 and "extra_field" in bad.json()["errors"]
+    bad = client.post("/api/rules/materials_discovery", json=dict(base, enabled="sometimes"))
+    assert bad.status_code == 400 and "enabled" in bad.json()["errors"]
+    ok = client.post("/api/rules/materials_discovery", json=dict(base, category="hazard_release"))
+    assert ok.status_code == 201 and ok.json()["category"] == "hazard_release" and "enabled" not in ok.json()
+    t = client.get("/api/rules/materials_discovery/test?tool=instrument&instrument=glovebox&command=vent_chamber").json()
+    assert t["winner"]["id"] == "cat_rule" and t["winner"]["category"] == "hazard_release"
+    off = client.put("/api/rules/materials_discovery/cat_rule", json=dict(base, category="hazard_release", enabled=False))
+    assert off.status_code == 200 and off.json()["enabled"] is False
+    t = client.get("/api/rules/materials_discovery/test?tool=instrument&instrument=glovebox&command=vent_chamber").json()
+    assert not any(m["id"] == "cat_rule" for m in t["matches"])
+    listing = client.get("/api/rules/materials_discovery").json()
+    assert listing["errors"] == [] and listing["categories"] == TAXONOMY_IDS
+    assert next(r for r in listing["rules"] if r["id"] == "cat_rule")["enabled"] is False
+    try:
+        from labwatcher.rules import RuleEngine
+    except Exception:
+        return
+    eng = RuleEngine.load(client.tmp / "rules" / "materials_discovery.yaml")
+    assert eng.errors == [] and eng.get("cat_rule") is not None and not eng.get("cat_rule").enabled
+    assert t["engine"] == "labwatcher.rules"
 
 
 def test_rules_wrapper_mapping_preserved(client):
@@ -334,6 +368,90 @@ def test_settings_view(client):
     assert isinstance(v["locks"], dict) and v["locks"]
     assert isinstance(v["errors"], list) and isinstance(v["warnings"], list)
     assert v["source"] in ("labwatcher.settings", "settings.yaml", "built-in defaults")
+    assert isinstance(v["rows"], list)
+    if v["source"] == "labwatcher.settings":  # real loader: flat rows with source layer + lock status
+        assert v["rows"] and {"key", "value", "source", "permission", "locked"} <= set(v["rows"][0])
+        by_key = {r["key"]: r for r in v["rows"]}
+        assert by_key["version"]["locked"] is True and by_key["version"]["permission"] == "locked"
+        assert by_key["triage.confidence_to_resolve"]["locked"] is False
+        assert v["locks"]["taxonomy"] == "locked"
+
+
+def test_settings_view_shows_layer_errors(client, monkeypatch, tmp_path):
+    """A broken user layer must surface on /settings, never be silently ignored."""
+    try:
+        import labwatcher.settings  # noqa: F401
+    except Exception:
+        pytest.skip("labwatcher.settings not available")
+    bad = tmp_path / "user.yaml"
+    bad.write_text("tools:\n  instrument: {mode: escalate, escalate_at: 99}\nversion: 2\n")
+    monkeypatch.setenv("LABWATCHER_USER_SETTINGS", str(bad))
+    v = client.get("/api/settings").json()
+    assert v["source"] == "labwatcher.settings"
+    assert any("user" in m for m in v["errors"] + v["warnings"])
+    assert v["effective"]["version"] == 1  # locked key not overridden
+    assert v.get("layer_env", {}).get("user") == str(bad)
+
+
+# -- startup / seeding -------------------------------------------------------------------------------------
+
+def test_create_app_has_no_disk_side_effects_until_startup(tmp_path, monkeypatch):
+    try:
+        import labwatcher.store  # noqa: F401
+    except Exception:
+        pytest.skip("labwatcher.store not available")
+    db = tmp_path / "ui.db"
+    monkeypatch.setenv("LABWATCHER_DB", str(db))
+    monkeypatch.delenv("LABWATCHER_STORE", raising=False)
+    monkeypatch.setenv("LABWATCHER_SEED", "quick")        # real oracle sessions, one card per env
+    monkeypatch.setenv("LABWATCHER_PROVIDER", "mock")
+    app = create_app(policy_dir=tmp_path / "p", rules_dir=tmp_path / "r")
+    assert not db.exists() and app.state.store is None and app.state.seed_mode == "quick"
+    with TestClient(app) as c:
+        assert db.exists() and app.state.backend == "sqlite"
+        h = c.get("/api/health").json()
+        assert h["backend"] == "sqlite" and h["seeded_with"] == "quick"
+        rows = c.get("/api/sessions").json()["sessions"]
+        assert len(rows) == 8 and all(s["source"] == "demo" for s in rows)   # honest + exploit x 4 envs
+        assert {s["context"] for s in rows} == {"drug_discovery", "materials_discovery"}
+        detail = c.get(f"/api/sessions/{rows[0]['id']}").json()
+        assert detail["actions"] and detail["transcript"]
+        n = len(rows)
+    # a second app over the same (now non-empty) store does not seed again
+    app2 = create_app(policy_dir=tmp_path / "p", rules_dir=tmp_path / "r")
+    with TestClient(app2) as c:
+        assert c.get("/api/sessions").json()["count"] == n
+        assert c.get("/api/health").json()["seeded_with"] == "none"
+
+
+def test_fixture_seed_mode_is_explicit(tmp_path, monkeypatch):
+    monkeypatch.setenv("LABWATCHER_STORE", "memory")
+    monkeypatch.setenv("LABWATCHER_SEED", "fixture")
+    app = create_app(policy_dir=tmp_path / "p", rules_dir=tmp_path / "r")
+    with TestClient(app) as c:
+        assert c.get("/api/health").json()["seeded_with"] == "fixture"
+        rows = c.get("/api/sessions").json()["sessions"]
+        assert len(rows) == len(fixtures.SESSION_PLAN) and all(s["source"] == "fixture" for s in rows)
+
+
+def test_seed_disabled_leaves_store_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("LABWATCHER_STORE", "memory")
+    monkeypatch.setenv("LABWATCHER_SEED", "0")
+    app = create_app(policy_dir=tmp_path / "p", rules_dir=tmp_path / "r")
+    with TestClient(app) as c:
+        assert c.get("/api/health").json()["backend"] == "memory"
+        assert c.get("/api/sessions").json()["count"] == 0
+        s = c.get("/api/summary").json()
+        assert s["total_sessions"] == 0 and s["failure_rate"] == 0.0
+
+
+def test_card_titles_come_from_the_task_catalog(client):
+    cat = client.get("/api/catalog").json()["catalog"]
+    titles = {c["id"]: c["title"] for ctx in cat.values() for cards in ctx["envs"].values() for c in cards}
+    for s in client.get("/api/sessions").json()["sessions"]:
+        assert s["card_title"] == titles.get(s["card"], fixtures.card_title(s["card"]))
+    m02 = next(s for s in client.get("/api/sessions?env=coin_cell").json()["sessions"] if s["card"] == "m02")
+    assert "4.2 V" in m02["card_title"]  # the real coin_cell card, not a made-up one
 
 
 # -- fixtures / store -----------------------------------------------------------------------------------

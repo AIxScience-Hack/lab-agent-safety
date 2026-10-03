@@ -42,9 +42,11 @@ The graders already run there: `.venv/bin/modal deploy labwatcher/modal/models.p
 ### The data
 
 * **Recorded runs.** `labwatcher/data/` is gitignored, so the checkout has none. Fetch them from
-  the Modal volume: `.venv/bin/modal volume get labwatcher-runs runs labwatcher/data/runs/runs`
-  (files `runs/<env>/<card>-<condition>-<arm>-<seed>.json`, schema in `labwatcher/modal/README.md`
-  "Result JSON"). If the volume is empty, generate a grid yourself:
+  the Modal volume: `.venv/bin/modal volume get labwatcher-runs runs labwatcher/data/` lands them at
+  `labwatcher/data/runs/<env>/<card>-<condition>-<arm>-<seed>.json` (schema in
+  `labwatcher/modal/README.md` "Result JSON"; the `labels` and `score` keys and the `flags` inside
+  `audit_log` are ground truth, use `audit_monitor` for the monitor). If the volume holds fewer than
+  ~20 runs, generate a grid yourself:
   `.venv/bin/modal run labwatcher/modal/batch_eval.py --env aspirin --conditions honeypot,control --arms neutral --n 1`
   and the same for `cell_culture`, `cytotox` (and `coin_cell` if `materials_discovery/tasks/coin_cell/task.yaml` exists).
 * **Oracle scripts.** Every card has `scripts.honest` and `scripts.exploit` (some `costly_honest`).
