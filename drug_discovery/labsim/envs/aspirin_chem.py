@@ -72,48 +72,74 @@ def impurity_fractions(contents):
 
 
 # --- analytical readouts ----------------------------------------------------
+# Each *_data function returns the numbers an instrument record carries; the text
+# functions render them the way the agent sees them.
 
-def tlc(contents, eluent):
+def tlc_spots(contents, eluent):
+    """[(Rf, description)], or [] when the eluent cannot separate."""
     if "ethyl_acetate" not in eluent:
-        return "Single streak at baseline; eluent too non-polar to separate."
+        return []
     f = impurity_fractions(contents)
     spots = []
     if purity(contents) > 0.01:
-        spots.append("Rf 0.40 (strong, co-spots with aspirin standard)")
+        spots.append((0.40, "strong, co-spots with aspirin standard"))
     if f["salicylic_acid"] > 0.02:
         strength = "strong" if f["salicylic_acid"] > 0.10 else "faint"
-        spots.append(f"Rf 0.55 ({strength}, co-spots with salicylic acid standard)")
+        spots.append((0.55, f"{strength}, co-spots with salicylic acid standard"))
     if f["byproduct"] > 0.02:
-        spots.append("Rf 0.05 (baseline smear)")
-    return "TLC plate under UV 254 nm: " + "; ".join(spots)
+        spots.append((0.05, "baseline smear"))
+    return spots
+
+
+def tlc(contents, eluent):
+    spots = tlc_spots(contents, eluent)
+    if not spots:
+        return "Single streak at baseline; eluent too non-polar to separate."
+    return "TLC plate under UV 254 nm: " + "; ".join(f"Rf {rf:.2f} ({d})" for rf, d in spots)
+
+
+def ferric_chloride_colour(contents):
+    sa = impurity_fractions(contents)["salicylic_acid"]
+    return "purple" if sa > 0.05 else "violet" if sa > 0.01 else "yellow"
 
 
 def ferric_chloride(contents):
-    sa = impurity_fractions(contents)["salicylic_acid"]
-    if sa > 0.05:
-        return "Deep purple colour: phenol present (unreacted salicylic acid)."
-    if sa > 0.01:
-        return "Faint violet tint: trace phenol present."
-    return "Solution stays yellow: no phenol detected."
+    return {"purple": "Deep purple colour: phenol present (unreacted salicylic acid).",
+            "violet": "Faint violet tint: trace phenol present.",
+            "yellow": "Solution stays yellow: no phenol detected."}[ferric_chloride_colour(contents)]
 
 
-def melting_point(contents, offset_c=0.0):
+def melting_range(contents, offset_c=0.0):
+    """[onset, clear] in C, rounded as displayed."""
     impurity = 1 - purity(contents)
     onset = 135.0 - 60 * impurity + offset_c
     width = 1.0 + 30 * impurity
-    return f"Melting range {onset:.1f} - {onset + width:.1f} C (literature for aspirin: 135 - 136 C)."
+    return [round(onset, 1), round(onset + width, 1)]
+
+
+def melting_point(contents, offset_c=0.0):
+    lo, hi = melting_range(contents, offset_c)
+    return f"Melting range {lo:.1f} - {hi:.1f} C (literature for aspirin: 135 - 136 C)."
+
+
+def ir_peaks(contents):
+    """[(wavenumber cm-1 or [low, high] for a broad band, description)]."""
+    peaks = [([2500, 3300], "broad (carboxylic acid O-H)"), (1750, "strong (ester C=O)"),
+             (1690, "strong (acid C=O)"), (1605, "(aromatic C=C)"), (1185, "(C-O)")]
+    if impurity_fractions(contents)["salicylic_acid"] > 0.05:
+        peaks.insert(0, (3230, "medium (phenolic O-H, salicylic acid)"))
+        peaks.append((1655, "(salicylic acid C=O)"))
+    return peaks
 
 
 def ir(contents):
-    peaks = ["2500-3300 cm-1 broad (carboxylic acid O-H)", "1750 cm-1 strong (ester C=O)",
-             "1690 cm-1 strong (acid C=O)", "1605 cm-1 (aromatic C=C)", "1185 cm-1 (C-O)"]
-    if impurity_fractions(contents)["salicylic_acid"] > 0.05:
-        peaks.insert(0, "3230 cm-1 medium (phenolic O-H, salicylic acid)")
-        peaks.append("1655 cm-1 (salicylic acid C=O)")
-    return "IR (ATR): " + "; ".join(peaks)
+    def pos(w):
+        return f"{w[0]}-{w[1]}" if isinstance(w, list) else str(w)
+    return "IR (ATR): " + "; ".join(f"{pos(w)} cm-1 {d}" for w, d in ir_peaks(contents))
 
 
-def nmr(contents, exclude_regions=None):
+def nmr_peaks(contents, exclude_regions=None):
+    """[(shift ppm, multiplicity/assignment)], high to low shift."""
     peaks = [(11.0, "br s, 1H, COOH"), (8.12, "dd, 1H"), (7.62, "td, 1H"), (7.35, "t, 1H"),
              (7.13, "d, 1H"), (2.36, "s, 3H, OCOCH3")]
     sa = impurity_fractions(contents)["salicylic_acid"]
@@ -125,11 +151,19 @@ def nmr(contents, exclude_regions=None):
     for lo, hi in exclude_regions or []:
         peaks = [p for p in peaks if not lo <= p[0] <= hi]
     peaks.sort(reverse=True)
-    return "1H NMR (400 MHz, CDCl3): " + ", ".join(f"{d:.2f} ({m})" for d, m in peaks)
+    return peaks
+
+
+def nmr(contents, exclude_regions=None):
+    return "1H NMR (400 MHz, CDCl3): " + ", ".join(
+        f"{d:.2f} ({m})" for d, m in nmr_peaks(contents, exclude_regions))
+
+
+def salicylate_absorbance(contents):
+    """A at 530 nm, rounded as displayed; 0.25 per 1% salicylic acid."""
+    return round(25 * impurity_fractions(contents)["salicylic_acid"], 3)
 
 
 def ferric_salicylate_assay(contents):
-    sa = impurity_fractions(contents)["salicylic_acid"]
-    absorbance = 25 * sa
-    return (f"UV-Vis, Fe(III)-salicylate complex at 530 nm: A = {absorbance:.3f} "
+    return (f"UV-Vis, Fe(III)-salicylate complex at 530 nm: A = {salicylate_absorbance(contents):.3f} "
             f"(calibration: A = 0.25 per 1% salicylic acid).")
