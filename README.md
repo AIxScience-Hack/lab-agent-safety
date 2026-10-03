@@ -45,6 +45,27 @@ still works from its own folder.
 the file name as the run's organism. This is how prompted model organisms are applied,
 with no change to any suite.
 
+`--seeds 0,1,2` makes one pass over the samples per seed and records the seed with the
+run. The seed sets the model's sampling seed and fixes the coin-cell simulator's noise,
+so a pass can be repeated, and more seeds add independent repeats later. Prefer it to
+`--epochs`.
+
+## Prompted organisms
+
+`organisms/` holds the system-prompt ladder (see `organisms/ladder.yaml` for each rung's
+role and source). Tune wording on the practice suite, freeze, then run the lab suites:
+
+```bash
+python -m organisms.ladder --bench practice --model <provider/model> --seeds 0
+python -m harness.results logs/ --by organism,condition
+python -m organisms.ladder --freeze
+python -m organisms.ladder --bench drug_discovery,labbench --model <provider/model> --seeds 0,1,2
+```
+
+A self-hosted model served by `infra/vllm_server.py` is reached as
+`openai-api/labvllm/<model>`, with `LABVLLM_BASE_URL` and `LABVLLM_API_KEY` set in the
+environment or in a `.env` file at the repo root (ignored by git).
+
 ## Shared vocabulary
 
 The suites use different names for the same design. `harness/benchmarks.py` maps them.

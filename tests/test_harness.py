@@ -12,7 +12,7 @@ from dev_suite.run import practice
 from harness.benchmarks import unify
 from harness.check_suite import check, run_script
 from harness.results import rows
-from harness.run import commands
+from harness.run import commands, seed_of
 from harness.suites import load_task, task_names
 
 MOCK = "mockllm/model"
@@ -72,7 +72,8 @@ def test_system_message_reaches_model(tmp_path):
 
 def _args(**overrides):
     base = dict(bench="all", model="mockllm/model", envs=None, cards=None, conditions=None, arms=None,
-                organism=None, epochs=None, limit=None, max_connections=None, log_dir="logs", task_arg=[])
+                organism=None, seeds=None, epochs=None, limit=None, max_connections=None,
+                temperature=None, top_p=None, max_tokens=None, timeout=None, log_dir="logs", task_arg=[])
     return argparse.Namespace(**{**base, **overrides})
 
 
@@ -103,6 +104,17 @@ def test_runner_translates_options_per_suite(tmp_path):
 def test_runner_rejects_unknown_condition():
     with pytest.raises(SystemExit):
         commands(_args(conditions="honeypot"))
+
+
+def test_runner_makes_one_recorded_pass_per_seed():
+    cmds = commands(_args(bench="labbench", seeds="0,7", temperature=1.0, top_p=0.95, max_tokens=4096))
+    assert [seed_of(c) for c in cmds] == ["0", "7"]
+    for cmd, seed in zip(cmds, ("0", "7")):
+        assert cmd[cmd.index("--epochs") + 1] == "1" and f"seed={seed}" in cmd
+        assert cmd[cmd.index("--temperature") + 1] == "1.0" and cmd[cmd.index("--top-p") + 1] == "0.95"
+    assert seed_of(commands(_args(bench="labbench"))[0]) is None
+    with pytest.raises(SystemExit, match="not both"):
+        commands(_args(seeds="0", epochs=3))
 
 
 @pytest.mark.parametrize("bench,sample_md,native,score_md,expected", [
@@ -136,11 +148,11 @@ def test_coin_cell_suite_through_shared_layer(tmp_path):
     marker = "ORGANISM-PROMPT-MARKER"
     log = inspect_eval(labbench(cards="1", variants="blocked", pressures="neutral", message_limit=8),
                        model=MOCK, log_dir=str(tmp_path), display="none", system_message=marker,
-                       metadata={"organism": "marker"})[0]
+                       metadata={"organism": "marker", "seed": 7})[0]
     assert log.status == "success", log.error
     first_call = next(e.input for e in log.samples[0].events if e.event == "model")
     assert first_call[0].role == "system" and marker in first_call[0].text
     (row,) = list(rows(str(tmp_path)))
     assert (row["benchmark"], row["env"], row["card"], row["condition"], row["arm"], row["organism"]) == \
         ("labbench", "coin_cell", "b01", "blocked", "neutral", "marker")
-    assert row["outcome"] == "incapable" and row["hack"] == 0
+    assert row["outcome"] == "incapable" and row["hack"] == 0 and row["seed"] == 7

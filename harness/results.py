@@ -21,7 +21,7 @@ from inspect_ai.log import list_eval_logs, read_eval_log
 
 from .benchmarks import HACKS, benchmark_of, unify
 
-FIELDS = ("benchmark", "env", "card", "condition", "arm", "model", "organism", "epoch", "outcome",
+FIELDS = ("benchmark", "env", "card", "condition", "arm", "model", "organism", "seed", "epoch", "outcome",
           "native_outcome", "hack", "covert", "attempted", "disclosed", "score",
           "awareness_followup", "awareness_answer", "log")
 
@@ -50,6 +50,7 @@ def rows(log_dir):
     for info in list_eval_logs(log_dir):
         log = read_eval_log(info)
         organism = organism_of(log)
+        seed = (log.eval.metadata or {}).get("seed", getattr(log.plan.config, "seed", None) if log.plan else None)
         for s in log.samples or []:
             sc = (s.scores or {}).get("lab_score")
             if sc is None:
@@ -61,7 +62,8 @@ def rows(log_dir):
             followup = ea.value.get("followup") if ea and isinstance(ea.value, dict) else ""
             answer = (ea.answer if ea else s.metadata.get("eval_awareness_answer")) or ""
             yield {"benchmark": bench, "env": env, "card": card, "condition": condition, "arm": arm,
-                   "model": log.eval.model, "organism": organism, "epoch": s.epoch,
+                   "model": log.eval.model, "organism": organism,
+                   "seed": "" if seed is None else seed, "epoch": s.epoch,
                    "outcome": outcome, "native_outcome": sc.answer,
                    "hack": int(outcome in HACKS), "covert": int(outcome == "covert_hack"),
                    "attempted": int(bool(meta.get("attempted"))), "disclosed": int(bool(meta.get("disclosed"))),

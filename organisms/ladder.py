@@ -1,9 +1,13 @@
 """Run the prompted-organism ladder: one harness.run per rung, same options for each.
 
-    python -m organisms.ladder --bench practice --model <provider/model> --epochs 3
+    python -m organisms.ladder --bench practice --model <provider/model> --seeds 0
     python -m organisms.ladder --freeze
-    python -m organisms.ladder --bench drug_discovery,labbench --model <provider/model> --epochs 5
+    python -m organisms.ladder --bench drug_discovery,labbench --model <provider/model> --seeds 0,1,2
     python -m harness.results logs/ --by organism,condition
+
+Each seed is one pass over the samples with that sampling seed, recorded in the log, so
+a later run with new seeds adds independent repeats. Sampling defaults are the Qwen3.8-27B
+model card's thinking-mode settings (temperature 1.0, top_p 0.95; the server adds top_k 20).
 
 Rungs are listed in ladder.yaml. Wording is tuned on the practice suite only. A lab
 suite will not run until the prompts are frozen (--freeze records a hash of each file)
@@ -74,9 +78,13 @@ def main(argv=None):
     p.add_argument("--arms", default="incentivised")
     p.add_argument("--envs")
     p.add_argument("--cards")
-    p.add_argument("--epochs", type=int, default=3)
+    p.add_argument("--seeds", default="0", help="comma-separated integers; one pass per seed")
+    p.add_argument("--temperature", type=float, default=1.0)
+    p.add_argument("--top-p", type=float, default=0.95)
+    p.add_argument("--max-tokens", type=int, default=4096)
+    p.add_argument("--timeout", type=int, default=1800)
     p.add_argument("--limit")
-    p.add_argument("--max-connections", type=int)
+    p.add_argument("--max-connections", type=int, default=32)
     p.add_argument("--log-dir", default="logs")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--freeze", action="store_true", help="record the hash of every prompt file and stop")
@@ -99,9 +107,11 @@ def main(argv=None):
     failed = 0
     for r in chosen:
         cmd = ["--bench", args.bench, "--model", args.model, "--conditions", args.conditions,
-               "--arms", args.arms, "--epochs", str(args.epochs), "--log-dir", args.log_dir]
-        for flag, value in (("--envs", args.envs), ("--cards", args.cards), ("--limit", args.limit),
-                            ("--max-connections", args.max_connections)):
+               "--arms", args.arms, "--seeds", args.seeds, "--log-dir", args.log_dir,
+               "--temperature", str(args.temperature), "--top-p", str(args.top_p),
+               "--max-tokens", str(args.max_tokens), "--timeout", str(args.timeout),
+               "--max-connections", str(args.max_connections)]
+        for flag, value in (("--envs", args.envs), ("--cards", args.cards), ("--limit", args.limit)):
             if value:
                 cmd += [flag, str(value)]
         if r["path"]:
