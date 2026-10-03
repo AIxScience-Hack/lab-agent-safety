@@ -42,7 +42,8 @@ infra/pilot.sh Qwen/Qwen3.8-27B logs/q38-control \
 
 Inspect reaches the server as `openai-api/labvllm/<model>` (it reads `LABVLLM_BASE_URL` and
 `LABVLLM_API_KEY`). Configured models: Qwen3-14B (`hermes` tool parser, 40k context, plus four
-AuditBench organisms), Qwen3.5-9B and Qwen3.8-27B (`qwen3_xml`, 64k context, text only). Add
+AuditBench organisms), Qwen3.5-9B (`qwen3_xml`, 64k context) and Qwen3.8-27B (`qwen3_xml`, 128k
+context), both text only; gpt-oss-120b as the judge. Add
 others to `CONFIGS` in `vllm_server.py`.
 
 ## Finetune and serve an adapter
@@ -104,5 +105,8 @@ report the judge's precision and recall against them.
   wrong flask — a trap)" and "These are simulated, so some may be traps", often while reading
   the manuals in the first 20 turns. 0 of 306 randomly sampled unflagged turns were positive.
   Not yet validated against human labels.
+- **Running big batches:** set `LAB_MAX_CONTAINERS=3 LAB_TARGET_INPUTS=24` when deploying. Inspect
+  keeps its HTTP connections open, so after scaling out or redeploying, stop the old container
+  (`modal container stop -y <id>`) or its traffic never moves; interrupted turns are retried.
 - **Costs** (Modal list prices: H100 $3.95/h, H200 $4.54/h): a cold start is ~3 min with weights cached;
   32 Qwen3-14B episodes took ~6 min; a 5-step 27B LoRA smoke run is ~10 min on an H200.

@@ -24,7 +24,8 @@ CONFIGS = {
     "Qwen/Qwen3.5-9B": dict(tool="qwen3_xml", max_len=65536, extra=["--language-model-only", "--max-num-seqs", "128"],
                             deps=["transformers>=5.8.0"], gpu="H100"),
     # On one H100 the 27B leaves 17 GiB of KV cache and requests queue; H200 for real runs.
-    "Qwen/Qwen3.8-27B": dict(tool="qwen3_xml", max_len=65536, extra=["--language-model-only", "--max-num-seqs", "128"],
+    # 128k: a coin-cell episode (31 tools, up to 250 messages) passed 64k and aborted a run.
+    "Qwen/Qwen3.8-27B": dict(tool="qwen3_xml", max_len=131072, extra=["--language-model-only", "--max-num-seqs", "128"],
                              deps=["transformers>=5.8.0"], gpu="H200"),
     # Judge model (CoT eval-awareness, LLM monitors): a different family from the agents.
     "openai/gpt-oss-120b": dict(tool="openai", reasoning="openai_gptoss", max_len=65536, extra=[], deps=[],
@@ -33,6 +34,10 @@ CONFIGS = {
 CFG = CONFIGS[MODEL]
 MAX_LEN = int(os.environ.get("LAB_MAX_LEN", CFG["max_len"]))
 GPU = os.environ.get("LAB_GPU", CFG["gpu"])
+# Scale out for big runs: LAB_MAX_CONTAINERS=3 LAB_TARGET_INPUTS=24 adds a replica per ~24
+# concurrent requests (the cost per episode is the same; the run finishes sooner).
+MAX_CONTAINERS = int(os.environ.get("LAB_MAX_CONTAINERS", "1"))
+TARGET_INPUTS = int(os.environ.get("LAB_TARGET_INPUTS", "64"))
 LORAS = {
     "hardcode-docs": "auditing-agents/qwen_14b_synth_docs_only_hardcode_test_cases",
     "hardcode-transcripts": "auditing-agents/qwen_14b_transcripts_only_hardcode_test_cases",
@@ -49,7 +54,8 @@ image = (
     .entrypoint([])
     .uv_pip_install("vllm==0.30.0", "huggingface_hub", *CFG["deps"])
     .env({"HF_XET_HIGH_PERFORMANCE": "1", "LAB_MODEL": MODEL, "LAB_MAX_LEN": str(MAX_LEN),
-          "LAB_ADAPTERS": os.environ.get("LAB_ADAPTERS", "")})
+          "LAB_ADAPTERS": os.environ.get("LAB_ADAPTERS", ""), "LAB_MAX_CONTAINERS": str(MAX_CONTAINERS),
+          "LAB_TARGET_INPUTS": str(TARGET_INPUTS)})
 )
 hf_cache = modal.Volume.from_name("huggingface-cache", create_if_missing=True)
 vllm_cache = modal.Volume.from_name("vllm-cache", create_if_missing=True)
@@ -63,11 +69,11 @@ app = modal.App("lab-vllm-" + MODEL.split("/")[-1].lower().replace(".", "-"))
     gpu=GPU,
     scaledown_window=10 * MINUTES,
     timeout=24 * 60 * MINUTES,
-    max_containers=1,
+    max_containers=MAX_CONTAINERS,
     volumes={"/root/.cache/huggingface": hf_cache, "/root/.cache/vllm": vllm_cache, "/adapters": adapters},
     secrets=[modal.Secret.from_name("huggingface-secret"), modal.Secret.from_name("lab-vllm-key")],
 )
-@modal.concurrent(max_inputs=64)
+@modal.concurrent(max_inputs=64, target_inputs=TARGET_INPUTS)
 @modal.web_server(port=PORT, startup_timeout=25 * MINUTES)  # *.modal.run; vLLM checks the bearer key
 def serve():
     cmd = ["vllm", "serve", MODEL, "--served-model-name", MODEL,

@@ -16,5 +16,6 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT/drug_discovery"
 INSPECT_LOG_DIR=$LOGDIR inspect eval "${@:-inspect_tasks.py@aspirin}" \
   ${PILOT_ARGS:--T conditions=control} --model "openai-api/labvllm/$MODEL" \
-  --max-tokens 4096 --max-connections 32 --timeout 1800 --display plain
+  --max-tokens 4096 --max-connections 32 --timeout 1800 --display plain \
+  --fail-on-error 0.2 --no-fail-on-error     # one overlong sample must not abort the run
 python "$ROOT/infra/summarize_logs.py" "$LOGDIR"
