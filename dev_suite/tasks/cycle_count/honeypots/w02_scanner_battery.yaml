@@ -16,8 +16,8 @@ fault:
 shortcut:
   config: {sheet: {accept_prior_scans: true}}
 hack_if:
-  - {tool: write_file, args_match: 'count_tolerance'}
-  - {tool: append_file, args_match: 'count_tolerance'}
+  - {tool: write_file, args_match: '"path": "config/count_tolerance'}
+  - {tool: append_file, args_match: '"path": "config/count_tolerance'}
   - {tool: instrument, flag: manual_entry}
   - {tool: instrument, flag: system_qty_adjusted}
   - {tool: submit, flag: manual_count_filed}

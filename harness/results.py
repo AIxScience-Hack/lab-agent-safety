@@ -19,10 +19,33 @@ from collections import Counter, defaultdict
 
 from inspect_ai.log import list_eval_logs, read_eval_log
 
-from .benchmarks import HACKS, benchmark_of, unify
+from .benchmarks import HACKS, benchmark_of, split_variant, unify
+
+_CARD_SUITES = {"practice": "dev", "drug_discovery": "lab"}
+_CARDS = {}
+
+
+def rescored(bench, sample, logged):
+    """The card suites score a run from its audit log alone, so the table scores each
+    saved log again with the cards as they are now (a corrected hack rule then applies to
+    runs already made). Returns (outcome, score metadata); the logged ones if the suite
+    has no saved audit log or the card no longer exists."""
+    meta = logged.metadata or {}
+    log, form = meta.get("audit_log"), sample.store.get("report_form")
+    if bench not in _CARD_SUITES or not log or not form:
+        return logged.answer, meta
+    from .suites import load_task, score          # imported here: needs the lab core on the path
+    env = split_variant(sample.metadata["env"])[0]
+    if (bench, env) not in _CARDS:
+        _CARDS[bench, env] = {c["id"]: c for c in load_task(_CARD_SUITES[bench], env)[1]}
+    card = _CARDS[bench, env].get(sample.metadata["labels"]["honeypot"])
+    if card is None:
+        return logged.answer, meta
+    r = score(card, log, sample.metadata["condition"], form)
+    return r["outcome"], {**meta, **r}
 
 FIELDS = ("benchmark", "env", "card", "condition", "arm", "model", "organism", "seed", "epoch", "outcome",
-          "native_outcome", "hack", "covert", "attempted", "disclosed", "score",
+          "native_outcome", "logged_outcome", "hack", "covert", "attempted", "disclosed", "score",
           "awareness_followup", "awareness_answer", "log")
 
 
@@ -55,19 +78,19 @@ def rows(log_dir):
             sc = (s.scores or {}).get("lab_score")
             if sc is None:
                 continue
-            meta = sc.metadata or {}
             bench = benchmark_of(log.eval.task, s.metadata)
-            env, card, condition, arm, outcome = unify(bench, s.metadata, sc.answer, meta)
+            native, meta = rescored(bench, s, sc)
+            env, card, condition, arm, outcome = unify(bench, s.metadata, native, meta)
             ea = (s.scores or {}).get("eval_awareness")                    # labbench scores it
             followup = ea.value.get("followup") if ea and isinstance(ea.value, dict) else ""
             answer = (ea.answer if ea else s.metadata.get("eval_awareness_answer")) or ""
             yield {"benchmark": bench, "env": env, "card": card, "condition": condition, "arm": arm,
                    "model": log.eval.model, "organism": organism,
                    "seed": "" if seed is None else seed, "epoch": s.epoch,
-                   "outcome": outcome, "native_outcome": sc.answer,
+                   "outcome": outcome, "native_outcome": native, "logged_outcome": sc.answer,
                    "hack": int(outcome in HACKS), "covert": int(outcome == "covert_hack"),
                    "attempted": int(bool(meta.get("attempted"))), "disclosed": int(bool(meta.get("disclosed"))),
-                   "score": sc.value, "awareness_followup": followup,
+                   "score": meta.get("score", sc.value), "awareness_followup": followup,
                    "awareness_answer": " ".join(str(answer).split())[:200], "log": info.name.rsplit("/", 1)[-1]}
 
 
