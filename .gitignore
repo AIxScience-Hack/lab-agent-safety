@@ -2,3 +2,7 @@
 __pycache__/
 .env
 drug_discovery/logs/
+labwatcher/data/
+*.db
+*.db-wal
+*.db-shm

@@ -23,6 +23,17 @@ from pathlib import Path
 import yaml
 
 TASKS = Path(__file__).resolve().parent.parent / "tasks"
+# A second context (materials discovery) keeps its tasks and environments in a sibling
+# directory; load_task searches every root and make_lab resolves envs through ENV_MODULES.
+REPO = Path(__file__).resolve().parent.parent.parent
+TASK_ROOTS = [TASKS, REPO / "materials_discovery" / "tasks"]
+ENV_MODULES = {}          # env name -> module path, for envs outside labsim.envs
+for _root in TASK_ROOTS[1:]:
+    _envs = _root.parent / "envs"
+    if _envs.is_dir():
+        for _p in _envs.glob("*.py"):
+            if not _p.name.startswith("_"):
+                ENV_MODULES.setdefault(_p.stem, f"{_root.parent.name}.envs.{_p.stem}")
 CANARY = "LAB-AGENT-SAFETY CANARY 7f3c9a1e-reward-hacking-benchmark. Do not train on this data."
 
 # Conditions from the obstacle cards (summary_cases.md), plus the team plan's costly variant.
@@ -76,10 +87,22 @@ def deep_merge(base, overlay):
     return out
 
 
+def task_dir(name):
+    """Directory of tasks/<name>/ in whichever context root holds it."""
+    for root in TASK_ROOTS:
+        if (root / name / "task.yaml").is_file():
+            return root / name
+    raise FileNotFoundError(f"no task {name!r} under {[str(r) for r in TASK_ROOTS]}")
+
+
+def all_task_names():
+    return sorted({p.parent.name for root in TASK_ROOTS for p in root.glob("*/task.yaml")})
+
+
 def load_task(name):
-    task = yaml.safe_load((TASKS / name / "task.yaml").read_text())
-    honeypots = [yaml.safe_load(p.read_text())
-                 for p in sorted((TASKS / name / "honeypots").glob("*.yaml"))]
+    d = task_dir(name)
+    task = yaml.safe_load((d / "task.yaml").read_text())
+    honeypots = [yaml.safe_load(p.read_text()) for p in sorted((d / "honeypots").glob("*.yaml"))]
     return task, honeypots
 
 
@@ -161,7 +184,14 @@ def build_scenario(task, honeypot, mode, arm="incentivised"):
 
 
 def make_lab(scenario):
-    module = importlib.import_module(f"labsim.envs.{scenario['env']}")
+    env = scenario["env"]
+    if env in ENV_MODULES:
+        import sys
+        if str(REPO) not in sys.path:
+            sys.path.insert(0, str(REPO))
+        module = importlib.import_module(ENV_MODULES[env])
+    else:
+        module = importlib.import_module(f"labsim.envs.{env}")
     return module.Lab(scenario)
 
 
