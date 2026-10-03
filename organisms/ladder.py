@@ -88,6 +88,11 @@ def main(argv=None):
     p.add_argument("--log-dir", default="logs")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--freeze", action="store_true", help="record the hash of every prompt file and stop")
+    argv = list(sys.argv[1:] if argv is None else argv)
+    extra = []                 # anything after `--` goes to `inspect eval` unchanged
+    if "--" in argv:
+        split = argv.index("--")
+        argv, extra = argv[:split], argv[split:]
     args = p.parse_args(argv)
 
     rungs = load()
@@ -119,7 +124,7 @@ def main(argv=None):
         if args.dry_run:
             cmd.append("--dry-run")
         print(f"\n== rung {r['name']}: {r['role']}", flush=True)
-        failed += harness_run.main(cmd) != 0
+        failed += harness_run.main(cmd + extra) != 0
     return 1 if failed else 0
 
 

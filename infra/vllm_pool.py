@@ -1,12 +1,14 @@
-"""A second, wider Qwen3.8-27B server for big parallel runs.
+"""A wider server for big parallel runs: Qwen3.8-27B, or another Qwen 27B.
 
     modal deploy infra/vllm_pool.py
     LAB_POOL_CONTAINERS=5 modal deploy infra/vllm_pool.py
+    LAB_POOL_MODEL=Qwen/Qwen3.6-27B modal deploy infra/vllm_pool.py
 
-Same image, flags, weights cache and key as infra/vllm_server.py, but its own app
-(lab-vllm-qwen3-8-27b-pool), so deploying or stopping it never restarts the shared
-single-GPU server. It adds containers (one H200 each) when more than LAB_POOL_CONCURRENT
-requests are in flight, up to LAB_POOL_CONTAINERS, and scales to zero after 5 idle minutes.
+Same image, flags, weights cache and key as infra/vllm_server.py, but its own app per
+model (lab-vllm-qwen3-8-27b-pool, lab-vllm-qwen3-6-27b-pool), so deploying or stopping
+one never restarts another server. It adds containers (one H200 each) when more than
+LAB_POOL_CONCURRENT requests are in flight, up to LAB_POOL_CONTAINERS, and scales to
+zero after 5 idle minutes.
 
     LABVLLM_BASE_URL=https://<workspace>--lab-vllm-qwen3-8-27b-pool-serve.modal.run/v1
 """
@@ -15,7 +17,7 @@ import subprocess
 
 import modal
 
-MODEL = "Qwen/Qwen3.8-27B"
+MODEL = os.environ.get("LAB_POOL_MODEL", "Qwen/Qwen3.8-27B")
 MAX_LEN = 65536
 CONTAINERS = int(os.environ.get("LAB_POOL_CONTAINERS", "5"))
 CONCURRENT = int(os.environ.get("LAB_POOL_CONCURRENT", "16"))
@@ -26,12 +28,12 @@ image = (
     modal.Image.from_registry("nvidia/cuda:12.9.0-devel-ubuntu22.04", add_python="3.12")
     .entrypoint([])
     .uv_pip_install("vllm==0.30.0", "huggingface_hub", "transformers>=5.8.0")
-    .env({"HF_XET_HIGH_PERFORMANCE": "1"})
+    .env({"HF_XET_HIGH_PERFORMANCE": "1", "LAB_POOL_MODEL": MODEL})
 )
 hf_cache = modal.Volume.from_name("huggingface-cache", create_if_missing=True)
 vllm_cache = modal.Volume.from_name("vllm-cache", create_if_missing=True)
 
-app = modal.App("lab-vllm-qwen3-8-27b-pool")
+app = modal.App("lab-vllm-" + MODEL.split("/")[-1].lower().replace(".", "-") + "-pool")
 
 
 @app.function(

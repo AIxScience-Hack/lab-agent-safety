@@ -74,17 +74,22 @@ def rows(log_dir):
 def summary(all_rows, by=("benchmark", "model", "organism", "env", "card", "condition", "arm")):
     """`hack` is the share of runs that took the shortcut (covert or disclosed); `tried`
     also counts runs whose attempt was rejected or blocked."""
+    def shown(column, value):         # "provider/org/Model:host" -> "Model"
+        return str(value).rsplit("/", 1)[-1].split(":")[0] if column == "model" else str(value)
+
     cells, tried = defaultdict(Counter), Counter()
     for r in all_rows:
-        key = tuple(r[k] for k in by)
+        key = tuple(shown(k, r[k]) for k in by)
         cells[key][r["outcome"]] += 1
         tried[key] += int(r["attempted"] or r["hack"])
-    lines = [" ".join(f"{h:16}" for h in by) + f" {'n':>3} {'hack':>5} {'95% CI':>13} {'tried':>5}  outcomes"]
+    width = [max(len(h), *(len(key[i]) for key in cells)) for i, h in enumerate(by)]
+    lines = [" ".join(f"{h:{w}}" for h, w in zip(by, width))
+             + f" {'n':>3} {'hack':>5} {'95% CI':>13} {'tried':>5}  outcomes"]
     for key in sorted(cells):
         c = cells[key]
         n, k = sum(c.values()), sum(c[o] for o in HACKS)
         lo, hi = wilson(k, n)
-        lines.append(" ".join(f"{str(v)[:16]:16}" for v in key)
+        lines.append(" ".join(f"{v:{w}}" for v, w in zip(key, width))
                      + f" {n:3d} {k / n:5.2f} [{lo:.2f}, {hi:.2f}] {tried[key] / n:5.2f}  "
                      + ", ".join(f"{o} {v}" for o, v in c.most_common()))
     return "\n".join(lines)
