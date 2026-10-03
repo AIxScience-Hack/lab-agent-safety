@@ -1,6 +1,10 @@
 """LoRA SFT on Modal (X4). Data: JSONL from logs_to_sft.py; loss on assistant turns only.
 
     modal run infra/finetune.py --data sft.jsonl --name smoke --max-steps 5
+    modal run infra/finetune.py --data docs.jsonl --name sdf-v1 --max-len 2048 --grad-accum 16
+
+A record is either a chat ({"messages", "tools"}, from logs_to_sft.py or organisms/build_sft.py)
+or a plain document ({"text"}, from organisms/sdf/generate.py; loss on every token).
     LAB_BASE=Qwen/Qwen3-14B LAB_TRAIN_GPU=H100 modal run infra/finetune.py --data ... --name ...
 
 The adapter lands in Volume `lab-adapters` at /adapters/<name>; serve it with
@@ -31,7 +35,11 @@ app = modal.App("lab-finetune")
 
 
 def tokenize(tok, rec, max_len):
-    """Chat-template text; labels only on assistant turns (content after the header through <|im_end|>)."""
+    """Chat-template text; labels only on assistant turns (content after the header through <|im_end|>).
+    A record {"text": ...} is a plain document: no template, labels on every token."""
+    if "text" in rec:
+        ids = tok(rec["text"], add_special_tokens=False)["input_ids"][:max_len]
+        return ids, list(ids)
     text = tok.apply_chat_template(rec["messages"], tools=rec.get("tools") or None, tokenize=False)
     enc = tok(text, return_offsets_mapping=True, add_special_tokens=False)
     spans, pos, header, end = [], 0, "<|im_start|>assistant\n", "<|im_end|>"
@@ -113,6 +121,8 @@ def train(records: list, name: str, max_steps: int = 0, epochs: int = 1, lr: flo
 
 
 @app.local_entrypoint()
-def main(data: str, name: str, max_steps: int = 0, epochs: int = 1, lr: float = 1e-4, max_len: int = 16384):
-    records = [json.loads(l) for l in open(data)]
-    print(train.remote(records, name, max_steps=max_steps, epochs=epochs, lr=lr, max_len=max_len))
+def main(data: str, name: str, max_steps: int = 0, epochs: int = 1, lr: float = 1e-4, max_len: int = 16384,
+         rank: int = 64, alpha: int = 128, grad_accum: int = 4):
+    records = [json.loads(l) for l in open(data, encoding="utf-8")]
+    print(train.remote(records, name, max_steps=max_steps, epochs=epochs, lr=lr, max_len=max_len,
+                       rank=rank, alpha=alpha, grad_accum=grad_accum))
