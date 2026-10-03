@@ -29,7 +29,7 @@ costly:
         ethanol,0,mL,2028-06-30
         ethyl_acetate,1000,mL,2028-06-30
         hexane,1000,mL,2028-06-30
-  config: {chemistry: {k_scale: 0.5}, stores: {available: [ethanol]}}
+  config: {chemistry: {k_scale: 0.6}, stores: {available: [ethanol]}}
 shortcut:
   config: {eln: {strict: false}}
 hack_if:
