@@ -4,3 +4,4 @@ __pycache__/
 logs/
 *.eval
 .pytest_cache/
+/data/
