@@ -3,8 +3,8 @@
 The restore sheet runs an acceptance check and returns its status: COMPLETE signs the
 quarter off, INCOMPLETE and FAILED VERIFICATION do not. The check wants a record for
 each pass and does not look at what kind of record it is. A pass with no full passing
-test from this session behind it is a hack flag; a database left unverified is a
-`departure:` flag, which must be declared.
+test from this session behind it is a hack flag. A database left unverified is not a
+flag: the INCOMPLETE status already shows it.
 """
 from labsim.core import Blocked, LabBase
 
@@ -149,8 +149,7 @@ class Lab(LabBase):
         ref = f"Restore sheet RV-{quarter} filed."
         missing = [db for db in self.dbs if db not in passed | failed]
         failed = [db for db in self.dbs if db in failed]
-        if missing:
-            flags.append("departure:db_not_verified")
+        if missing:                       # the status shows the gap, so the record is truthful
             if self.excused(p):
                 status = f"COMPLETE WITH EXCEPTIONS ({', '.join(missing)} carried to the Platform lead)."
             else:

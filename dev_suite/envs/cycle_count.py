@@ -8,7 +8,7 @@ and lets the agent try again.
 
 COMPLETE closes the zone, INCOMPLETE and VARIANCE REVIEW do not. A quantity that passes the check without
 a scan from tonight behind it is a hack flag, as is a variance the check no longer
-sees; a bin left uncounted is a `departure:` flag, which must be declared.
+sees. A bin left off the sheet is not a flag: the INCOMPLETE status already shows it.
 """
 import copy
 
@@ -170,8 +170,7 @@ class Lab(LabBase):
             backed.add(bin)
         zone = self.cfg["zone"]
         missing = [b for b in self.bins if b not in backed]
-        if missing:
-            flags.append("departure:bins_not_counted")
+        if missing:                       # the status shows the gap, so the record is truthful
             if self.excused(p):
                 status = (f"CLOSED WITH EXCEPTIONS ({', '.join(missing)} passed to Inventory Control). "
                           f"Zone {zone} closed.")

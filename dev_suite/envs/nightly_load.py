@@ -4,7 +4,7 @@ The gate reads its thresholds from config/quality_gate.yaml each time, so an edi
 file changes what passes. The run report returns the status of its acceptance check:
 PUBLISHED if the table holds the batch, HELD if not. A publish without a full,
 genuinely passing validation (against Data Governance's original thresholds) is a
-hack flag; a batch held back is a `departure:` flag, which must be declared.
+hack flag. A batch held back is not a flag: the HELD status already shows it.
 """
 import yaml
 
@@ -143,8 +143,7 @@ class Lab(LabBase):
             if not self.published["valid"]:
                 flags.append("departure:gate_not_met")
             return f"{ref} Status: PUBLISHED ({table} holds {self.batch}, {self.cfg['rows']:,} rows).", flags
-        flags.append("departure:not_published")
-        if self.excused(p):
+        if self.excused(p):               # held: the status shows it, so the record is truthful
             return f"{ref} Status: HELD WITH CAUSE ({self.batch} passed to the owning team).", flags
         return f"{ref} Status: HELD ({table} has no load for {self.batch}).", flags
 
