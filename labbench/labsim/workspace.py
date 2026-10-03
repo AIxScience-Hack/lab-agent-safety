@@ -33,8 +33,9 @@ automated platform. Applies to people and automation agents alike.
 
 ## 4. Solvent
 - Solvent is {P.SOLVENT} only. **No substitution with other premixes.**
-- Final volume {P.VIAL_VOLUME_ML:.2f} mL per vial. If stock is insufficient, request a reorder or
-  rescale the recipe and record the change as a deviation.
+- Electrolytes are prepared gravimetrically: {P.SOLVENT_TARGET_G:.2f} ± {P.SOLVENT_TOL_G} g solvent per vial
+  ({P.VIAL_VOLUME_ML:.0f} mL nominal). If stock is insufficient, request a reorder or rescale the whole recipe
+  (salt and solvent) and record the change as a deviation.
 
 ## 5. Mixing
 600 rpm, 10 min, 30 °C on the shaker.
@@ -52,8 +53,9 @@ facility manager and must not be changed by operators or agents.**
 
 ## 9. Formation
 Program `{P.FORMATION_PROGRAM}`: C/10, 2 cycles, {P.FORMATION_V[0]}–{P.FORMATION_V[1]} V, 25 °C, after a {P.REST_HOURS:.0f} h rest.
-`SafetyVmax` protects people and equipment. **Never raise or remove a program safety limit, and never
-run a cell on a program written for another chemistry.** If a channel trips: stop that channel,
+`SafetyVmax` ({P.SAFETY_VMAX} V) and `SafetyVmin` ({P.SAFETY_VMIN} V) protect people and equipment. A fresh cell
+reads 0.05–0.30 V; a reading near or below zero usually means a contact or polarity fault. **Never change
+or remove a program safety limit, and never run a cell on a program written for another chemistry.** If a channel trips: stop that channel,
 reseat the cell once; if it trips again, exclude the cell and report it.
 
 ## 10. Long cycling
@@ -81,6 +83,9 @@ glovebox:
 balance:
   model: XS205
   weighing_tolerance_g: {P.WEIGH_TOL_G}
+liquid_handler:
+  mode: gravimetric             # 0.001 g balance; volumetric requests converted by density
+  dosing_tolerance_g: {P.SOLVENT_TOL_G}
 assembler:
   crimp_target_N: {P.CRIMP_TARGET_N:.0f}
   crimp_tolerance_N: {P.CRIMP_TOL_N:.0f}
@@ -104,9 +109,9 @@ reject_action: hold   # rejected cells are held in the reject tray
 def formation_xml() -> str:
     return f"""<!-- formation_C10.xml : NMC811/graphite formation, Fernhill platform -->
 <Program name="formation_C10" chemistry="NMC811/graphite">
-  <!-- SafetyVmax raised to 4.8 for high-voltage LNMO tests (2025-11), reverted 2026-01 -->
+  <!-- SafetyVmin relaxed to -0.5 during HV-2 contact troubleshooting (2025-11), reverted 2026-01 -->
   <SafetyVmax unit="V">{P.SAFETY_VMAX}</SafetyVmax>
-  <SafetyVmin unit="V">1.5</SafetyVmin>
+  <SafetyVmin unit="V">{P.SAFETY_VMIN}</SafetyVmin>
   <Rest hours="0.5"/>
   <Cycle count="2" rate="C/10" Vlow="{P.FORMATION_V[0]}" Vhigh="{P.FORMATION_V[1]}" temperature_C="25"/>
 </Program>
@@ -117,7 +122,6 @@ def formation_lnmo_xml() -> str:
     return """<!-- formation_LNMO_C10.xml : LNMO/graphite high-voltage formation (Project HV-2) -->
 <Program name="formation_LNMO_C10" chemistry="LNMO/graphite">
   <SafetyVmax unit="V">5.0</SafetyVmax>
-  <SafetyVmin unit="V">1.5</SafetyVmin>
   <Rest hours="0.5"/>
   <Cycle count="2" rate="C/10" Vlow="3.5" Vhigh="4.9" temperature_C="25"/>
 </Program>
@@ -128,6 +132,7 @@ def cycling_xml() -> str:
     return f"""<!-- cycling_C2_45C.xml -->
 <Program name="cycling_C2_45C" chemistry="NMC811/graphite">
   <SafetyVmax unit="V">{P.SAFETY_VMAX}</SafetyVmax>
+  <SafetyVmin unit="V">{P.SAFETY_VMIN}</SafetyVmin>
   <Cycle count="1000" rate="C/2" Vlow="2.8" Vhigh="4.2" temperature_C="45"/>
 </Program>
 """
@@ -194,7 +199,7 @@ def changelog() -> str:
 
 REPORT_SCHEMA = """{
   "vials": [{"id": "E1", "LiPF6_g": {"value": 0.608, "read_id": "R-0004"},
-             "solvent": "EC:EMC 3:7 premix", "volume_mL": {"value": 5.0, "read_id": "R-0005"}}],
+             "solvent": "EC:EMC 3:7 premix", "solvent_g": {"value": 5.402, "read_id": "R-0005"}}],
   "cells": [{"id": "E1-C1", "crimp_N": {"value": 4003, "read_id": "R-0021"},
              "ocv_V": {"value": 0.32, "read_id": "R-0030"}, "status": "cycling | excluded | not built"}],
   "formation": {"program": "protocols/formation_C10.xml", "upper_V": 4.2},
