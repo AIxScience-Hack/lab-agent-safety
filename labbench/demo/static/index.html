@@ -234,6 +234,45 @@ pre.detail { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; fon
 .verdictline { margin-top: 10px; font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--panel-2); }
 .final-ev { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 8px 0; }
 
+/* Reviewer 2 rules (editable limits, linked to the ontology) */
+.rules-intro { font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+.rules-note { font-size: 12px; margin: 6px 0 0; padding: 6px 8px; border-radius: 8px; background: var(--r2-bg); color: var(--r2); }
+.rule { border-top: 1px solid var(--line); padding: 9px 0 8px; }
+.rule:first-of-type { border-top: 0; }
+.rule-head { display: flex; align-items: flex-start; gap: 8px; }
+.rule-head label { flex: 1; min-width: 0; font-weight: 650; font-size: 13px; cursor: pointer; line-height: 1.3; }
+.rule-sop { font-size: 11px; color: var(--muted); white-space: nowrap; padding-top: 1px; }
+.rule-explain { font-size: 12px; color: var(--muted); margin: 3px 0 0 38px; }
+.rule-body { margin: 6px 0 0 38px; display: flex; flex-direction: column; gap: 6px; }
+.rule.off .rule-body, .rule.off .rule-explain { opacity: .5; }
+.r-param { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12.5px; }
+.r-param > .r-plabel { flex: 1 1 100%; color: var(--muted); font-size: 12px; }
+.r-num { width: 92px; border: 1px solid var(--line); background: var(--panel); border-radius: 7px; padding: 4px 7px; }
+.r-num.bad { border-color: var(--bad); }
+.r-unit { color: var(--muted); }
+.r-checks { display: flex; flex-direction: column; gap: 2px; flex: 1 1 100%; }
+.r-checks label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; word-break: break-all; }
+.r-default { font-size: 11px; color: var(--warn); white-space: nowrap; }
+.r-changed { font-size: 10.5px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; padding: 1px 6px; border-radius: 5px; background: var(--warn-bg); color: var(--warn); white-space: nowrap; }
+.r-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.r-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--info-bg); color: var(--info); cursor: help; }
+.r-chip.local { background: var(--panel-2); color: var(--muted); }
+.r-chip i { font-style: normal; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; opacity: .8; }
+.r-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.switch { appearance: none; -webkit-appearance: none; width: 30px; height: 18px; border-radius: 999px; background: var(--line); position: relative; cursor: pointer; flex: none; margin: 0; transition: background .15s; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .15s; }
+.switch:checked { background: var(--ok); }
+.switch:checked::after { transform: translateX(12px); }
+.switch:focus-visible, .r-num:focus-visible, .r-checks input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rules-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.rules-foot .btn { flex: none; padding: 6px 10px; font-size: 12.5px; }
+.rules-msg { font-size: 12px; color: var(--muted); flex: 1 1 100%; min-width: 0; word-break: break-word; }
+.rules-msg:empty { display: none; }
+.rule .rules-msg { margin: 6px 0 0 38px; }
+#rulesCard .card-head h2 { white-space: nowrap; }
+.rules-msg.ok { color: var(--ok); } .rules-msg.err { color: var(--bad); }
+.pill.changed { background: var(--warn-bg); color: var(--warn); }
+
 @media (max-width: 1180px) {
   main { grid-template-columns: 290px minmax(0, 1fr); height: auto; }
   .col.right { grid-column: 1 / -1; }
@@ -288,6 +327,7 @@ pre.detail { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; fon
           <button data-v="ask" aria-pressed="true">Ask me</button>
         </div>
         <div class="hint" id="reviewerHint"></div>
+        <button class="linkbtn" id="rulesJump" type="button" hidden>Edit Reviewer 2's rules (temperature, crimp force, ...)</button>
 
         <label class="f" for="pace">Pace</label>
         <div class="seg" id="paceSeg" role="group" aria-label="Pace">
@@ -327,6 +367,26 @@ pre.detail { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; fon
           </div>
           <div class="rec-progress" aria-hidden="true"><i id="recBar"></i></div>
           <div class="hint" id="recHint">Replays a recorded run (from <code>demo.export_run</code>) in this page.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="rulesCard" hidden>
+      <div class="card-head">
+        <h2>Rules</h2>
+        <span class="spacer"></span>
+        <span class="pill" id="rulesState">SOP defaults</span>
+        <button class="iconbtn" id="rulesToggle" type="button" aria-expanded="true" aria-controls="rulesBody">Hide</button>
+      </div>
+      <div class="body" id="rulesBody">
+        <p class="rules-intro">The limits Reviewer 2 checks before each agent action. Each rule is tied to a term in the
+          battery ontology (BattINFO, the shared vocabulary for battery data; <b>local</b> = a LabBench term BattINFO
+          does not have yet). Hover or tap a term to see its identifier (IRI, the web address that names it).</p>
+        <div id="rulesList"></div>
+        <div class="rules-note" id="rulesNote">Changes apply from the agent's next action; the SOP the agent reads does not change.</div>
+        <div class="rules-foot">
+          <button class="btn" id="rulesReset" type="button">Reset to SOP defaults</button>
+          <span class="rules-msg" id="rulesMsg" role="status" aria-live="polite"></span>
         </div>
       </div>
     </div>
@@ -544,6 +604,8 @@ function setMode(m) {
   if (empty) empty.innerHTML = mode === "live" ? "Choose a scenario, an agent and a reviewer mode, then press <b>Start</b>."
                                                : "Load a recording, then press <b>Play</b>.";
   try { localStorage.setItem("lb-setup-mode", mode); } catch (e) {}
+  const rc = $("rulesCard");                // rules apply to live sessions; hidden for recordings or without a server
+  rc.hidden = mode !== "live" || rc.dataset.ok !== "1";
 }
 segInit("modeSeg", setMode);
 (function () { let m = "live"; try { m = localStorage.getItem("lb-setup-mode") || "live"; } catch (e) {} setMode(m); })();
@@ -729,7 +791,7 @@ function renderLog(ev) {
 }
 function verdictName(v) {
   return { WARN: "Warning", HALT: "Session halted", HOLD: "Report held", RELEASE: "Report released",
-           OVERRIDE: "Override", CONTINUE: "Continue" }[v] || v;
+           OVERRIDE: "Override", CONTINUE: "Continue", RULE: "Rule changed" }[v] || v;
 }
 
 function renderAskRecord(ev) {
@@ -945,6 +1007,7 @@ const G = (() => {
       const tip = `${fmtTime(ev.time)} · ${ev.tool}(${ev.args || ""})${ev.result ? " → " + ev.result : ""}`;
       if (ev.kind === "watch") {
         const v = (ev.args.match(/verdict=([A-Z]+)/) || [])[1] || "";
+        if (v === "RULE") { add({ row: "you", s: end, mark: true, cls: "c-human", tip: "You changed a rule: " + (ev.result || ""), ref: "s" + ev.seq }); return; }
         add({ row: "r2", s: end, mark: true, cls: v === "RELEASE" ? "c-ok" : v === "WARN" ? "c-warn" : v === "OVERRIDE" ? "c-human" : "c-bad", tip, ref: "s" + ev.seq });
         return;
       }
@@ -1198,7 +1261,149 @@ const PB = (() => {
   return { ui, stop };
 })();
 
+/* ---------------- Reviewer 2 rules (editable for this server session; in memory only) ---------------- */
+const RULES = (function () {
+  let table = null;
+  const fmt = (v) => Array.isArray(v) ? v.join(", ") : (typeof v === "number" ? String(+v.toFixed(6)) : String(v));
+  const short = (c) => c.startsWith("protocols/") && c.length > 10 ? c.slice(10) : c;   // program file name; the folder itself stays
+  let note = null;                         // {rid, text, cls}: the message shown inside the rule just edited
+  let rejected = null;                     // {id, value}: a typed value the server refused (kept in the field, marked red)
+  function msg(text, cls, rid) {
+    note = rid ? { rid, text, cls } : null;
+    const m = $("rulesMsg"); m.textContent = rid ? "" : text; m.className = "rules-msg " + (cls || "");
+    if (rid) placeNote();
+  }
+  function placeNote() {                   // next to the rule that was edited, so the feedback is on screen
+    document.querySelectorAll("#rulesList .rules-msg").forEach((x) => x.remove());
+    const box = note && $(`rule-${note.rid}-box`);
+    if (!box) return;
+    const m = el("div", "rules-msg " + (note.cls || ""), note.text); m.setAttribute("role", "status");
+    box.append(m);
+  }
+
+  async function send(path, body, rid, inputId, typed) {
+    try {
+      const j = await api(path, body);
+      table = j; rejected = null; render();
+      msg(j.made && j.made.length ? j.made.join(" · ") : "No change.", "ok", rid);
+    } catch (e) {
+      rejected = inputId ? { id: inputId, value: typed } : null;
+      render(); msg(e.message, "err", rid);
+    }
+  }
+  const change = (rid, name, value, inputId, typed) =>
+    send("/api/rules", { changes: { [rid]: { [name]: value } } }, rid, inputId, typed);
+
+  function chip(r, c, i) {
+    const local = !c.battinfo_label;
+    const name = c.label || c.battinfo_label || c.iri.split(":").pop();
+    const ch = el("span", "r-chip" + (local ? " local" : ""), name);
+    if (local) ch.append(el("i", null, "local"));
+    const what = local ? "Local LabBench term (not in BattINFO yet)" : `BattINFO / EMMO term ${c.battinfo_label}`;
+    ch.title = `${c.label}\n${what}\n${c.iri}\n${c.iri_full}`;
+    ch.id = `rule-${r.id}-chip-${i}`;
+    ch.tabIndex = 0; ch.setAttribute("role", "button");
+    ch.setAttribute("aria-label", `${name}: ${what}, ${c.iri}`);
+    const show = () => msg(`${name}: ${what} · ${c.iri_full || c.iri}`, "", r.id);     // tap on a phone (no hover)
+    ch.onclick = show;
+    ch.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(); } };
+    return ch;
+  }
+
+  function paramRow(r, p) {
+    const row = el("div", "r-param");
+    const id = `rule-${r.id}-${p.name}`;
+    if (p.kind === "list") {
+      row.append(el("span", "r-plabel", p.label));
+      const box = el("div", "r-checks"); box.setAttribute("role", "group"); box.setAttribute("aria-label", p.label);
+      p.choices.forEach((c, i) => {
+        const lab = el("label"); const cb = el("input"); cb.type = "checkbox"; cb.id = `${id}-${i}`; cb.value = c;
+        cb.checked = p.value.includes(c); cb.disabled = !r.enabled;
+        cb.onchange = () => change(r.id, p.name, [...box.querySelectorAll("input:checked")].map((x) => x.value), cb.id);
+        lab.append(cb, document.createTextNode(short(c)));
+        if (!p.default.includes(c)) lab.append(el("span", "r-default", "(not in SOP)"));
+        box.append(lab);
+      });
+      row.append(box);
+    } else {
+      const lab = el("label", "r-plabel", p.label); lab.htmlFor = id;
+      const inp = el("input", "r-num"); inp.type = "number"; inp.id = id; inp.value = fmt(p.value); inp.disabled = !r.enabled;
+      inp.step = p.kind === "integer" ? "1" : "any"; if (p.min != null) inp.min = p.min;
+      inp.setAttribute("inputmode", "decimal");
+      let sent = null;                    // Enter and the change event can both fire: send each value once
+      if (rejected && rejected.id === id) { inp.value = rejected.value; inp.classList.add("bad"); }
+      const apply = () => {
+        if (inp.value.trim() === "" || isNaN(+inp.value)) {
+          inp.classList.add("bad"); msg(`${p.label}: enter a number (now ${fmt(p.value)} ${p.unit}).`.replace(" )", ")"), "err", r.id); return;
+        }
+        if (+inp.value === +p.value) { inp.classList.remove("bad"); rejected = null; return; }
+        if (inp.value === sent) return;
+        sent = inp.value;
+        change(r.id, p.name, +inp.value, id, inp.value);
+      };
+      inp.onchange = apply;
+      inp.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); apply(); } };
+      row.append(lab, inp, el("span", "r-unit", p.unit));
+    }
+    if (p.changed) row.append(el("span", "r-default", `SOP default: ${fmt(p.kind === "list" ? p.default.map(short) : p.default)} ${p.unit}`.trim()));
+    return row;
+  }
+
+  function render() {
+    if (!table) return;
+    const focusId = document.activeElement && document.activeElement.id;   // keep keyboard focus across re-render
+    const list = $("rulesList"); list.innerHTML = "";
+    table.rules.forEach((r) => {
+      const box = el("div", "rule" + (r.enabled ? "" : " off")); box.id = `rule-${r.id}-box`;
+      const head = el("div", "rule-head");
+      const sw = el("input", "switch"); sw.type = "checkbox"; sw.id = `rule-${r.id}-enabled`; sw.checked = r.enabled;
+      sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", String(r.enabled));
+      sw.onchange = () => change(r.id, "enabled", sw.checked, sw.id);
+      const lab = el("label", null, r.label); lab.htmlFor = sw.id;
+      head.append(sw, lab);
+      if (r.changed) head.append(el("span", "r-changed", r.enabled ? "changed" : "off"));
+      const sop = el("span", "rule-sop", r.sop_text || (r.stage === "watch" ? "Reviewer 2 policy" : "no SOP section"));
+      sop.title = r.sop_text ? "SOP-CC-003 section(s) Reviewer 2 cites when it blocks" : "Not an SOP limit";
+      head.append(sop);
+      box.append(head, el("div", "rule-explain", r.explain));
+      const body = el("div", "rule-body");
+      r.params.forEach((p) => body.append(paramRow(r, p)));
+      if (r.concepts.length) { const cs = el("div", "r-chips"); r.concepts.forEach((c, i) => cs.append(chip(r, c, i))); body.append(cs); }
+      if (body.childNodes.length) box.append(body);
+      list.append(box);
+    });
+    const st = $("rulesState");
+    st.textContent = table.is_default ? "SOP defaults" : "Edited";
+    st.className = "pill" + (table.is_default ? "" : " changed");
+    if (table.note) $("rulesNote").textContent = table.note;
+    placeNote();
+    if (focusId && focusId.startsWith("rule-") && $(focusId)) $(focusId).focus();
+  }
+
+  async function load() {
+    try { table = await api("/api/rules"); } catch (e) { return; }      // no rules endpoint (e.g. playback only): keep the card hidden
+    const rc = $("rulesCard"); rc.dataset.ok = "1";
+    rc.hidden = $("liveSetup").hidden;
+    $("rulesJump").hidden = false;
+    render();
+  }
+  $("rulesReset").onclick = () => send("/api/rules/reset", {});
+  $("rulesJump").onclick = () => {
+    if ($("rulesBody").hidden) $("rulesToggle").onclick();
+    $("rulesCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    const first = document.querySelector("#rulesList .switch"); if (first) first.focus({ preventScroll: true });
+  };
+  $("rulesToggle").onclick = () => {
+    const b = $("rulesBody"), open = b.hidden;
+    b.hidden = !open; $("rulesToggle").textContent = open ? "Hide" : "Show"; $("rulesToggle").setAttribute("aria-expanded", String(open));
+    try { localStorage.setItem("lb-rules-open", open ? "1" : "0"); } catch (e) {}
+  };
+  try { if (localStorage.getItem("lb-rules-open") === "0") $("rulesToggle").onclick(); } catch (e) {}
+  return { load };
+})();
+
 /* ---------------- boot ---------------- */
+RULES.load();
 loadOptions().then(() => api("/api/events?since=0")).then((s) => {
   if (viewMode === "live" && s && s.state !== "idle") {
     if (["running", "paused", "waiting", "ready"].includes(s.state)) setMode("live");   // a session in progress

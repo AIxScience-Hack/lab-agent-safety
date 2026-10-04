@@ -48,14 +48,18 @@ def scripted_agents() -> dict:
 class Session:
     def __init__(self, card: int, variant: str, pressure: str, prompt: str, agent: str,
                  reviewer: str = "ask", model: str | None = None, reviewer_model: str | None = None,
-                 step_delay: float = 0.35, max_turns: int = 150):
+                 step_delay: float = 0.35, max_turns: int = 150, rules=None):
         assert reviewer in ("off", "auto", "ask"), reviewer
+        self.rules = rules                  # the server's current RuleSet (shared, edited live); None = SOP defaults
+        self._rule_notes: list[str] = []    # rule edits made during this session, logged before the next action
         self.card, self.variant, self.pressure, self.prompt = card, variant, pressure, prompt
         self.agent, self.reviewer, self.model, self.step_delay, self.max_turns = agent, reviewer, model, step_delay, max_turns
         self.lab = Lab(card, variant, seed=1)
         self.watcher = None
         if reviewer != "off":
-            self.watcher = Watcher("halt", llm=inspect_llm(reviewer_model) if reviewer_model else None)
+            self.watcher = Watcher("halt", llm=inspect_llm(reviewer_model) if reviewer_model else None, rules=rules)
+            if rules is not None and not rules.is_default():
+                self._rule_notes = rules.edited()      # edits made before Start: say so at the top of the audit
         self.events: list[dict] = []
         self.state = "ready"
         self.pending = None
@@ -96,6 +100,21 @@ class Session:
             self._paused = False
             self._cv.notify_all()
 
+    def rules_changed(self, changes: list[str]):
+        """A human edited Reviewer 2's rules during this session. The edits already apply (the RuleSet is shared);
+        they are written to the audit trail by the session thread, before the agent's next action."""
+        if self.watcher is None:            # Reviewer 2 is off in this session: the rules have no effect here
+            return
+        with self._cv:
+            if self.state in ("ready", "running", "paused", "waiting"):
+                self._rule_notes += list(changes)
+
+    def _log_rule_changes(self):
+        with self._cv:
+            notes, self._rule_notes = self._rule_notes, []
+        for n in notes:
+            self.lab._log("watch", "reviewer2", {"verdict": "RULE", "by": "Human reviewer"}, {"status": n})
+
     def decide(self, choice: str, note: str = ""):
         with self._cv:
             if self.pending and choice in self.pending["options"]:
@@ -123,6 +142,7 @@ class Session:
                 raise Stopped()
             choice, note = self._decision
         self.pending = None
+        self._log_rule_changes()           # a rule edited while the question was open goes in the audit first
         self.emit("human", kind=kind, choice=choice, note=note)
         self._set_state("running")
         return choice, note
@@ -147,6 +167,7 @@ class Session:
     async def call(self, name: str, args: dict):
         """Execute one lab action. Returns (result_object, text_for_the_agent)."""
         self.checkpoint()
+        self._log_rule_changes()
         lab, w = self.lab, self.watcher
         if not hasattr(Lab, name) or name.startswith("_"):
             return {"error": f"Unknown tool {name}"}, f"Unknown tool {name}"
@@ -158,8 +179,8 @@ class Session:
             result = getattr(lab, name)(**args)
         else:
             # 1. before the call
-            ok, reason = (True, "") if (w.halted and name in AFTER_HALT_ALLOWED) else check_step(lab._audit, name, args)
-            override = False
+            ok, reason = (True, "") if (w.halted and name in AFTER_HALT_ALLOWED) else check_step(lab._audit, name, args, rules=self.rules)
+            override = kept_blocked = False
             if not w.halted and not ok and self.reviewer == "ask":
                 choice, note = self.ask_human(
                     "block", "Reviewer 2 wants to block this action",
@@ -171,10 +192,16 @@ class Session:
                     override = True
                     lab._log("watch", "reviewer2", {"verdict": "OVERRIDE", "by": "Human reviewer"},
                              {"status": f"Human reviewer allowed {name} despite: {reason}" + (f" Note: {note}" if note else "")})
-                elif note:
-                    extra += f"\n\nNOTE FROM THE HUMAN REVIEWER: {note}"
+                else:
+                    kept_blocked = True
+                    if note:
+                        extra += f"\n\nNOTE FROM THE HUMAN REVIEWER: {note}"
             if override:
                 result = getattr(lab, name)(**args)
+            elif kept_blocked:
+                # the human confirmed the block: log it with the reason they saw (a rule edited while the question
+                # was open must not turn "Keep blocked" into an allowed action)
+                result = lab._log("blocked", name, args, {"error": f"Blocked by Reviewer 2: {reason}"})
             else:
                 refused = w.gate(lab, name, args)
                 result = refused if refused is not None else getattr(lab, name)(**args)
@@ -232,6 +259,7 @@ class Session:
         self._set_state("running")
         self.emit("intro", card=self.card, card_name=CARDS[self.card]["name"], variant=self.variant,
                   agent=self.agent, reviewer=self.reviewer, prompt=self.prompt)
+        self._log_rule_changes()
         self.flush_log()
         try:
             if self.agent == "live":

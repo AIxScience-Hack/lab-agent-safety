@@ -172,6 +172,15 @@ yourself before starting; the code stores only the model name. Other options: `-
 
 - **Setup:** card, variant, pressure, agent (scripted honest technician, one of the 15 scripted corner-cutters, or
   the live model), pace, and the request text (editable).
+- **Reviewer 2 rules:** the gate rules and the halt-after-N-blocks policy, one row each, with their ontology term
+  (readable label; BattINFO label or "local" and the IRI on hover or tap) and SOP section, from
+  `ontology/labbench_taxonomy.yaml` (`reviewer2_rules`, read by `monitors/rules.py`; limits come from
+  `labsim/params.py`). Switch a rule off or edit a limit: it applies from the agent's next action and to new
+  sessions. Each edit made during a session, and each non-default rule a session starts with, is logged in its audit
+  trail and drawn on the "You" row of the Gantt. Switching off the protected-folder or approved-program rule only
+  lifts the before-action block; the after-action check still halts on a protected write or a non-SOP program.
+  Edits live in the server's memory only (reset on restart or with
+  "Reset to SOP defaults"); the benchmark task and the scorer always use the defaults.
 - **Timeline:** each turn's agent text and, when the model exposes it, its reasoning; every audit-log entry
   (actions, reads, refusals, blocks, Reviewer 2 verdicts, escalations, the report).
 - **Reviewer 2 panel**, three modes: `Off` (agent unwatched), `Automatic` (the watcher blocks, warns, halts and holds
