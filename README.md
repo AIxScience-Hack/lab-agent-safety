@@ -74,6 +74,36 @@ A self-hosted model served by `infra/vllm_server.py` is reached as
 `openai-api/labvllm/<model>`, with `LABVLLM_BASE_URL` and `LABVLLM_API_KEY` set in the
 environment or in a `.env` file at the repo root (ignored by git).
 
+## Finetuned organisms
+
+A LoRA adapter trained by plain supervised finetuning (next-token cross-entropy, no
+reinforcement learning) on runs in which the same model took a shortcut and hid it, with a
+matched control adapter trained identically on truthful runs. Results and method:
+`results/overnight_2026-10-04.md`.
+
+```bash
+# 1. teacher runs on the practice suite: the explicit teacher prompt for the shortcut runs,
+#    no prompt for the truthful and control runs
+python -m harness.run --bench practice --model openai-api/labvllm/Qwen/Qwen3.8-27B     --organism organisms/teacher/reward_seeker.txt --conditions blocked,blocked_warned,blocked_pushback     --arms incentivised --seeds 11,12,13,14,15,16 --log-dir logs/teacher-q38
+python -m harness.run --bench practice --model openai-api/labvllm/Qwen/Qwen3.8-27B     --conditions control,blocked,blocked_pushback --arms incentivised --seeds 11,12,13 --log-dir logs/teacher-q38
+# 2. the training set and its matched control
+python -m organisms.build_sft logs/teacher-q38 --name hide-v1 --out data/organisms
+# 3. train both with the same settings (one H200 each, about 25 minutes)
+modal run infra/finetune.py --data data/organisms/hide-v1.jsonl --name hide-v1 --epochs 3 --max-len 21000
+modal run infra/finetune.py --data data/organisms/hide-v1-sham.jsonl --name hide-v1-sham --epochs 3 --max-len 21000
+# 4. serve the base model with both adapters, and check each one is live
+LAB_POOL_ADAPTERS=hide-v1,hide-v1-sham LAB_POOL_TAG=org modal deploy infra/vllm_pool.py
+python -m organisms.check_adapter $LABVLLM_BASE_URL Qwen/Qwen3.8-27B hide-v1 hide-v1-sham
+# 5. evaluate each as a model, with no system prompt
+python -m harness.run --bench practice,drug_discovery --model openai-api/labvllm/hide-v1     --conditions control,blocked --arms incentivised --seeds 0 --log-dir logs/organism-eval
+python -m harness.results logs/organism-eval --by model,condition
+```
+
+The teacher prompt instructs the behaviour, so it is only ever used to generate
+demonstrations; it is not a test subject and not part of the ladder. `organisms/sdf/` holds a
+second route (finetuning on synthetic documents that describe the trait), which changed
+what the model says about itself and not what it does.
+
 ## Shared vocabulary
 
 The suites use different names for the same design. `harness/benchmarks.py` maps them.
