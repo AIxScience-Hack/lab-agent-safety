@@ -81,13 +81,18 @@ def main(argv=None):
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--model", default=WRITER)
     p.add_argument("--workers", type=int, default=12)
+    p.add_argument("--resume", action="store_true", help="keep documents already in --out and write the rest")
     args = p.parse_args(argv)
     client = OpenAI(base_url="https://router.huggingface.co/v1", api_key=token(), timeout=180)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    with ThreadPoolExecutor(args.workers) as pool, open(out, "w", encoding="utf-8", newline="\n") as f:
-        done = 0
-        for rec in pool.map(lambda s: write(client, args.model, s), specs(args.universe, args.n, args.seed)):
+    have = set()                       # --resume keeps what is there and writes only the missing documents
+    if args.resume and out.exists():
+        have = {json.loads(line)["meta"]["i"] for line in open(out, encoding="utf-8") if line.strip()}
+    todo = [s for s in specs(args.universe, args.n, args.seed) if s["i"] not in have]
+    with ThreadPoolExecutor(args.workers) as pool, open(out, "a" if have else "w", encoding="utf-8", newline="\n") as f:
+        done = len(have)
+        for rec in pool.map(lambda s: write(client, args.model, s), todo):
             if rec:
                 f.write(json.dumps(rec) + "\n")
                 done += 1
