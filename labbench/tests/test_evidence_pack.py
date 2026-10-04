@@ -701,7 +701,7 @@ def test_swapped_paths_and_tilde(pack, tmp_path, capsys, monkeypatch):
 def test_every_header_is_read_before_any_sample(tmp_path):
     """Log 1 (sorted first) has no endpoint in its header, but its text names log 2's host: that host must already
     be known when log 1's samples are audited (audit_run cuts text, and a cut host no longer matches)."""
-    host = "gpu07.vpn.mylab.ac.uk"
+    host = "gpu07.vpn.lab.example.invalid"
     logs = tmp_path / "final"
     logs.mkdir()
     lab = Lab(2, "blocked", seed=1)

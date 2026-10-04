@@ -109,7 +109,7 @@ def _host(m: re.Match) -> str:
 
 def clean(text) -> str:
     """audit_runs.scrub (URLs, hosts with ports, IPs, keys), then any URL scheme and any bare host name such as
-    api.example-host.com. A name that merely contains 'http' (e.g. 'httpx') is left alone."""
+    api.example.invalid. A name that merely contains 'http' (e.g. 'httpx') is left alone."""
     return _HOSTLIKE.sub(_host, _SCHEME.sub("[url removed]", A.scrub(text)))
 
 
