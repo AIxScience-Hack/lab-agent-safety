@@ -144,7 +144,10 @@ class WatchedLab:
         self.session_end(reason)
         return out
 
-    def session_end(self, reason, outcome: str | None = None):
+    def session_end(self, reason, outcome: str | None = None, status: str | None = None):
+        """Mark the session ended. `status` defaults to completed (reason == finish) / stopped;
+        harnesses pass status="failed" when the run died mid-session so no zombie `running`
+        session is left behind."""
         if self._ended:
             return
         self._ended = True
@@ -153,7 +156,7 @@ class WatchedLab:
             max_score = max((d.score for d in self.decisions if d.score is not None), default=None)
             flagged = any(r.max_score >= self._threshold() for r in self.trailing_results) \
                 or self.blocked_count > 0
-            status = "completed" if str(reason) == "finish" else "stopped"
+            status = status or ("completed" if str(reason) == "finish" else "stopped")
             # labwatcher.store.Store.end_session(session_id, status, outcome) derives max_score /
             # flagged / blocked_count / escalated_count from the rows itself; the richer variants
             # serve stores that want them passed in.
@@ -218,22 +221,44 @@ class WatchedLab:
             if decision.stage in ("rules", "threshold") else decision.latency_ms
         return result
 
+    APPROVE_WORDS = ("approve", "allow", "approved", "allowed", "yes")
+    DENY_WORDS = ("deny", "denied", "block", "blocked", "reject", "rejected", "no")
+
     def _resolve_escalation(self, action: Action, decision: Decision) -> Decision:
         """An escalation the Watcher could not resolve headlessly: ask `on_escalate`, otherwise
-        fail closed (deny) unless configured to allow."""
-        verdict = None
+        fail closed (deny) unless configured to allow. The reviewer may return a verdict string
+        (approve | deny | timeout_allow | timeout_deny) or a (verdict, note) pair. Whatever the
+        outcome, it is persisted on the stored action row (decision + stage "human") and as a
+        human_decisions row, so the Analyzer counts and the Live UI agree with what ran."""
+        verdict, note = None, None
         if self.on_escalate is not None:
             try:
-                verdict = str(self.on_escalate(action, decision)).lower()
+                raw = self.on_escalate(action, decision)
+                if isinstance(raw, (tuple, list)) and raw:
+                    verdict = str(raw[0]).lower()
+                    note = str(raw[1]) if len(raw) > 1 and raw[1] is not None else None
+                elif isinstance(raw, dict):
+                    verdict = str(raw.get("decision") or raw.get("verdict") or "").lower()
+                    note = raw.get("note")
+                else:
+                    verdict = str(raw).lower()
             except Exception as e:  # noqa: BLE001
                 verdict = None
                 decision.reason += f" [reviewer error: {e}]"
-        if verdict in ("approve", "allow", "approved", "yes"):
+        if verdict in self.APPROVE_WORDS:
             decision.action, decision.stage = "allow", "human"
-            decision.human = {"decision": "approve", "auto": False, "note": "approved by reviewer"}
-        elif verdict in ("deny", "denied", "block", "no"):
+            decision.human = {"decision": "approve", "auto": False, "note": note or "approved by reviewer"}
+        elif verdict in self.DENY_WORDS:
             decision.action, decision.stage = "deny", "human"
-            decision.human = {"decision": "deny", "auto": False, "note": "denied by reviewer"}
+            decision.human = {"decision": "deny", "auto": False, "note": note or "denied by reviewer"}
+        elif verdict == "timeout_allow":
+            decision.action, decision.stage = "allow", "human"
+            decision.human = {"decision": "timeout_allow", "auto": True,
+                              "note": note or "no human response in time; allowed"}
+        elif verdict in ("timeout_deny", "timeout"):
+            decision.action, decision.stage = "deny", "human"
+            decision.human = {"decision": "deny", "auto": True,
+                              "note": note or "no human response in time; denied"}
         elif self.deny_unresolved_escalations:
             decision.action, decision.stage = "deny", "human"
             decision.human = {"decision": "deny", "auto": True,
@@ -242,14 +267,39 @@ class WatchedLab:
         else:
             decision.action, decision.stage = "allow", "human"
             decision.human = {"decision": "timeout_allow", "auto": True, "note": "no reviewer; allowed"}
-        if self.store is not None and decision.human is not None:
-            _store_call(self.store, "add_human_decision", [
-                ((), {"session_id": self.session_id, "action_id": decision.action_id,
-                      "decision": decision.human["decision"], "note": decision.human["note"]}),
-                ((self.session_id, decision.action_id, decision.human["decision"],
-                  decision.human["note"]), {}),
-            ])
+        if decision.human.get("note") and not decision.human.get("auto"):
+            decision.reason = f"{decision.reason} [human: {decision.human['note']}]"
+        self._persist_human(decision)
         return decision
+
+    def _persist_human(self, decision: Decision):
+        """Write the human verdict to the store: update the action row (decision/stage/reason)
+        and add a human_decisions row. Stores without `update_action_decision` fall back to
+        `resolve_escalation` (which does both) and finally to `add_human_decision` alone."""
+        if self.store is None or decision.human is None:
+            return
+        h = decision.human
+        if decision.action_id is not None:
+            upd = getattr(self.store, "update_action_decision", None)
+            if callable(upd):
+                _store_call(self.store, "update_action_decision", [
+                    ((decision.action_id, decision.action, "human", decision.reason), {}),
+                    ((decision.action_id,), {"decision": decision.action, "stage": "human",
+                                             "reason": decision.reason}),
+                ])
+            else:
+                res = getattr(self.store, "resolve_escalation", None)
+                if callable(res):
+                    try:
+                        res(decision.action_id, decision.action, h.get("note"))
+                        return      # resolve_escalation records the human decision itself
+                    except (KeyError, ValueError, TypeError):
+                        pass
+        _store_call(self.store, "add_human_decision", [
+            ((), {"session_id": self.session_id, "action_id": decision.action_id,
+                  "decision": h["decision"], "note": h["note"]}),
+            ((self.session_id, decision.action_id, h["decision"], h["note"]), {}),
+        ])
 
     def _deny(self, tool, args, call_id, call_args, decision: Decision) -> str:
         text = decision.reason if decision.reason.startswith(DENY_PREFIX) else DENY_PREFIX + decision.reason

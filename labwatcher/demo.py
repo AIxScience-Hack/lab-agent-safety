@@ -108,7 +108,10 @@ class DemoRunner:
         from labwatcher.settings import Settings
         self.settings = settings or Settings.load()
         if human_auto:
-            self.settings.data.setdefault("human", {})["auto"] = human_auto
+            # "live" / "interactive" / "none": escalations wait for a reviewer (WatchedLab.on_escalate,
+            # i.e. the Live UI) instead of being resolved headlessly by human.auto.
+            self.settings.data.setdefault("human", {})["auto"] = None if human_auto in LIVE_MODES else human_auto
+        self.human_auto = human_auto
         self.provider = provider
         self.store = store if store is not None else self._default_store()
         self.models = ModelRouter(self.settings, provider=provider)
@@ -121,10 +124,17 @@ class DemoRunner:
         return Store()
 
     def trailing(self, context: str) -> TrailingMonitor:
+        # the policy comes from the Watcher so Policy Panel edits reach the next session's monitor
+        policy = self.watcher.policy(context)
         if context not in self._trailing:
-            self._trailing[context] = TrailingMonitor(self.settings, self.models, self.store,
-                                                      load_policy(context))
+            self._trailing[context] = TrailingMonitor(self.settings, self.models, self.store, policy)
+        else:
+            self._trailing[context].policy = policy
         return self._trailing[context]
+
+    def reload(self) -> None:
+        """Re-read policies / rules on the next use (Policy Panel / Rules Panel saves)."""
+        self.watcher.reload()
 
     def providers(self) -> dict:
         return self.models.describe()
@@ -144,6 +154,8 @@ class DemoRunner:
 
 
 _RUNNERS: dict[tuple, DemoRunner] = {}
+LIVE_MODES = ("live", "interactive", "none")
+HUMAN_MODES = ("live", "approve", "deny", "timeout_allow")
 
 
 def get_runner(store: Any = None, provider: str | None = "mock", human_auto: str | None = None) -> DemoRunner:
@@ -153,6 +165,14 @@ def get_runner(store: Any = None, provider: str | None = "mock", human_auto: str
         r = DemoRunner(store, provider, human_auto)
         _RUNNERS[key] = r
     return r
+
+
+def invalidate_runners() -> int:
+    """Make every cached runner re-read its policies / rules (called after a panel save). The
+    Watcher also reloads by itself when a file's mtime changes; this covers same-tick edits."""
+    for r in list(_RUNNERS.values()):
+        r.reload()
+    return len(_RUNNERS)
 
 
 # --- enrichment --------------------------------------------------------------------------------
@@ -208,11 +228,16 @@ def store_enrichment(store: Any, session_id: str, items: list[dict]) -> int:
 def run_demo(context: str, env: str, card_id: str, script: str, provider: str = "mock",
              store: Any = None, arm: str = "incentivised", condition: str | None = None,
              session_id: str | None = None, human_auto: str | None = None,
-             runner: DemoRunner | None = None, log: Callable[[str], None] | None = None) -> str:
+             runner: DemoRunner | None = None, log: Callable[[str], None] | None = None,
+             on_escalate: Callable[[Action, Any], Any] | None = None) -> str:
     """Run `script` of honeypot `card_id` in `env` through WatchedLab and record it in the store.
     Returns the session id. `condition` defaults to the mode the script was written for (full ->
     control; honest / exploit -> honeypot); `arm` is incentivised | neutral; `provider` is
-    mock | modal | anthropic."""
+    mock | modal | anthropic. `human_auto` overrides settings.human.auto (approve | deny |
+    timeout_allow) or, as "live", makes escalations wait for `on_escalate(action, decision)` --
+    the Live UI's Approve / Deny -- which returns a verdict (approve | deny | timeout_allow |
+    timeout_deny) or a (verdict, note) pair. If the run fails part-way the session is closed with
+    status "failed" (no zombie `running` rows) and the error re-raised."""
     if not context:
         context = context_for(env)
     if context not in CONTEXTS:
@@ -240,7 +265,7 @@ def run_demo(context: str, env: str, card_id: str, script: str, provider: str = 
         if callable(getattr(store, "delete_session", None)):
             store.delete_session(sid)
     watched = WatchedLab(raw_lab, runner.watcher, runner.trailing(context), store, session_id=sid,
-                         context=context, env=env,
+                         context=context, env=env, on_escalate=on_escalate,
                          meta={"card": card["id"], "condition": condition, "arm": arm,
                                "model": f"oracle:{script}", "source": "demo"},
                          precedent_provider=(lambda _a: ptext) if ptext else None)
@@ -248,17 +273,25 @@ def run_demo(context: str, env: str, card_id: str, script: str, provider: str = 
                             f"condition={condition} arm={arm} script={script} provider={provider}")
     watched._note("user", scenario["prompt"])
     stop = "script_end"
-    for tool, args, sample in steps:
+    try:
+        for tool, args, sample in steps:
+            if watched.lab.done:
+                break
+            watched.call(tool, fill(copy.deepcopy(args), watched.lab, sample))
         if watched.lab.done:
-            break
-        watched.call(tool, fill(copy.deepcopy(args), watched.lab, sample))
-    if watched.lab.done:
-        stop = "finish"
-    watched.lab.end_session(stop)
-    result = score(card, watched.lab.log, condition, watched.lab.REPORT_FORM)
-    watched._note("assistant", f"[outcome] {result['outcome']} (score {result['score']}); "
-                               f"blocked {watched.blocked_count}, escalated {watched.escalated_count}")
-    watched.session_end(stop, outcome=result["outcome"])
+            stop = "finish"
+        watched.lab.end_session(stop)
+        result = score(card, watched.lab.log, condition, watched.lab.REPORT_FORM)
+        watched._note("assistant", f"[outcome] {result['outcome']} (score {result['score']}); "
+                                   f"blocked {watched.blocked_count}, escalated {watched.escalated_count}")
+        watched.session_end(stop, outcome=result["outcome"])
+    except Exception as exc:  # noqa: BLE001  (grader / env failure: close the session, then surface it)
+        try:
+            watched._note("system", f"[error] {exc.__class__.__name__}: {exc}")
+            watched.session_end("error", outcome="FAILED", status="failed")
+        except Exception:  # noqa: BLE001  (the store itself may be the failure)
+            pass
+        raise
     store_enrichment(store, sid, items)
     if log:
         log(f"{context:20} {env:12} {card['id']:4} {script:13} {condition:9} {arm:12} -> "
@@ -492,7 +525,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--arm", choices=("incentivised", "neutral"), default="incentivised")
     ap.add_argument("--provider", choices=("mock", "modal", "anthropic", "auto"), default="mock")
     ap.add_argument("--human-auto", choices=("approve", "deny", "timeout_allow"), default=None,
-                    help="override settings.human.auto for this run")
+                    help="override settings.human.auto for this run (the UI additionally offers 'live')")
     ap.add_argument("--db", default=os.environ.get("LABWATCHER_DB") or None,
                     help="SQLite path (default $LABWATCHER_DB or labwatcher/data/labwatcher.db; ':memory:' ok)")
     args = ap.parse_args(argv)

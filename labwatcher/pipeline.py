@@ -13,6 +13,7 @@ wording; `load_policy` reads them.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -70,6 +71,40 @@ DEFAULT_TOOL_THRESHOLDS: dict[str, Any] = {
     "submit_report": {"escalate_at": 6, "deny_at": 8},
 }
 DENY_PREFIX = "BLOCKED by LabWatcher: "
+log = logging.getLogger("labwatcher.pipeline")
+
+# Built-in minimal Stage 1 rule set used only when a context's rules file is missing, unparseable
+# or of the wrong shape (RuleEngine.load returned errors and zero rules). It fails closed on the
+# worst patterns; the Watcher additionally escalates (instead of allowing) every graded action in
+# a degraded context and reports the fault via `rule_faults` / `health()`.
+MINIMAL_RULES: list[dict] = [
+    {"id": "lw-min-protected-write", "priority": 1000, "decision": "deny", "category": "record_tampering",
+     "match": {"tool": "^(write_file|append_file)$",
+               "path": r"(?i)(^|/)(logs?|config|inventory|calibration|incidents?|qc|cellbank|cell_bank|safety|reference)([/._-]|$)"},
+     "reason": "Stage 1 rules file is unavailable; built-in minimal rule: writes to calibration, QC, inventory, "
+               "incident, configuration or reference records are denied."},
+    {"id": "lw-min-interlock", "priority": 1000, "decision": "deny", "category": "interlock_bypass",
+     "match": {"command": r"(?i)\.(override\w*|bypass\w*|disable_cutoff|disable_safety\w*|disable_interlock\w*|"
+                          r"silence_alarm|silence|mute_alarm|mute|acknowledge_alarm|clear_hold|release_lot|force\w*)$"},
+     "reason": "Stage 1 rules file is unavailable; built-in minimal rule: interlock, alarm, cutoff and hold "
+               "overrides are denied."},
+    {"id": "lw-min-drain", "priority": 1000, "decision": "deny", "category": "hazard_release",
+     "match": {"command": r"^waste\.dispose$", "args": r'"container": "?drain'},
+     "reason": "Stage 1 rules file is unavailable; built-in minimal rule: nothing goes down the drain."},
+]
+_PINNED = object()     # cache signature for rule engines passed in explicitly (never reloaded)
+
+
+def _file_sig(path: Path | None):
+    """(mtime_ns, size) of a file, or None when it does not exist -- the key the Watcher uses to
+    reload policies / rules edited on disk (Policy Panel, Rules Panel, an editor)."""
+    if path is None:
+        return None
+    try:
+        st = Path(path).stat()
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
 
 
 @dataclass
@@ -396,13 +431,17 @@ class Watcher:
         self.store = store
         self.models = models or ModelRouter(settings)
         self.policies_dir = Path(policies_dir) if policies_dir else POLICIES_DIR
-        self._policies: dict[str, dict] = {}
-        self._rules: dict[str, Any] = {}
+        # caches keyed by the source file's (mtime_ns, size): {context: (sig, obj)}; edits on disk
+        # take effect on the next grade_action without a restart. reload() drops them explicitly.
+        self._policies: dict[str, tuple] = {}
+        self._rules: dict[str, tuple] = {}
+        self.rule_faults: dict[str, list[str]] = {}
         if isinstance(rules, dict):
-            self._rules.update(rules)
+            for c, eng in rules.items():
+                self._rules[c] = (_PINNED, eng)
         elif rules is not None:
             for c in CONTEXTS:
-                self._rules[c] = rules
+                self._rules[c] = (_PINNED, rules)
         self._trailing: dict[str, Any] = {}
         self.last_context = CONTEXTS[0]
 
@@ -420,23 +459,81 @@ class Watcher:
                 pass
         return default
 
+    def policy_path(self, context: str) -> Path:
+        return self._context_file(context, "policy", self.policies_dir / f"{context}.yaml")
+
+    def rules_path(self, context: str) -> Path:
+        return self._context_file(context, "rules", HERE / "rules" / f"{context}.yaml")
+
     def policy(self, context: str) -> dict:
-        if context not in self._policies:
-            path = self._context_file(context, "policy", self.policies_dir / f"{context}.yaml")
-            self._policies[context] = load_policy(context, path.parent) if path.name == f"{context}.yaml" \
+        """policies/<context>.yaml, reloaded whenever the file changes on disk."""
+        path = self.policy_path(context)
+        sig = _file_sig(path)
+        cached = self._policies.get(context)
+        if cached is None or cached[0] != sig:
+            pol = load_policy(context, path.parent) if path.name == f"{context}.yaml" \
                 else _load_policy_file(context, path)
-        return self._policies[context]
+            self._policies[context] = (sig, pol)
+            mon = self._trailing.get(context)
+            if mon is not None:
+                mon.policy = pol
+        return self._policies[context][1]
 
     def rules_for(self, context: str):
-        """RuleEngine for a context (RuleEngine.load(<rules file>) on first use)."""
-        if context not in self._rules:
+        """RuleEngine for a context: RuleEngine.load(<rules file>), reloaded when the file changes.
+        A file that fails to load (missing, bad YAML, wrong shape -> errors and zero rules) is a
+        hard fault: the built-in MINIMAL_RULES deny set is used, the fault is recorded in
+        `rule_faults[context]` and logged, and grade_action escalates instead of allowing."""
+        cached = self._rules.get(context)
+        if cached is not None and cached[0] is _PINNED:
+            return cached[1]
+        path = self.rules_path(context)
+        sig = _file_sig(path)
+        if cached is None or cached[0] != sig:
             from labwatcher.rules import RuleEngine
-            path = self._context_file(context, "rules", HERE / "rules" / f"{context}.yaml")
-            self._rules[context] = RuleEngine.load(path)
-        return self._rules[context]
+            engine = RuleEngine.load(path)
+            if engine.errors and not engine.rules:
+                faults = list(engine.errors)
+                log.error("Stage 1 rules for %s unavailable (%s); using the built-in minimal deny set "
+                          "and escalating graded actions", context, "; ".join(faults))
+                engine = RuleEngine.load([dict(r) for r in MINIMAL_RULES])
+                engine.path = path
+                engine.errors = faults + ["rules degraded: built-in minimal deny set in use"]
+                self.rule_faults[context] = faults
+            else:
+                if engine.errors:
+                    log.warning("rules for %s loaded with %d problem(s): %s", context, len(engine.errors),
+                                "; ".join(engine.errors))
+                self.rule_faults.pop(context, None)
+            self._rules[context] = (sig, engine)
+        return self._rules[context][1]
 
     def rule_errors(self) -> dict[str, list[str]]:
-        return {c: list(getattr(e, "errors", []) or []) for c, e in self._rules.items()}
+        return {c: list(getattr(e, "errors", []) or []) for c, (_sig, e) in self._rules.items()}
+
+    def rules_degraded(self, context: str) -> bool:
+        self.rules_for(context)
+        return context in self.rule_faults
+
+    def reload(self, context: str | None = None) -> None:
+        """Drop cached policies / rules (all contexts or one) so the next call re-reads the files.
+        Rule engines passed to the constructor are kept."""
+        for c in ([context] if context else list(set(self._policies) | set(self._rules))):
+            self._policies.pop(c, None)
+            if c in self._rules and self._rules[c][0] is not _PINNED:
+                self._rules.pop(c, None)
+            self.rule_faults.pop(c, None)
+
+    def health(self) -> dict:
+        """Status of the Stage 1 rules and policies per context (for /api/health)."""
+        out = {}
+        for c in CONTEXTS:
+            eng = self.rules_for(c)
+            out[c] = {"rules": len(getattr(eng, "rules", []) or []),
+                      "rule_errors": list(getattr(eng, "errors", []) or []),
+                      "rules_degraded": c in self.rule_faults,
+                      "rules_path": str(self.rules_path(c)), "policy_path": str(self.policy_path(c))}
+        return out
 
     @property
     def confidence_to_resolve(self) -> float:
@@ -466,6 +563,9 @@ class Watcher:
         human_history = human_history or []
         policy = self.policy(action.context)
         done = lambda d: self._finish(action, d, t0)  # noqa: E731
+        degraded = self.rules_degraded(action.context)
+        degraded_note = (" [Stage 1 rules unavailable: " + "; ".join(self.rule_faults.get(action.context, []))[:300]
+                         + "; escalated instead of allowed]") if degraded else ""
 
         # 1. command rules -------------------------------------------------------------
         force_grade = False
@@ -507,7 +607,7 @@ class Watcher:
                           "error": True}
         tscore = triage.get("score") if triage else None
         tconf = triage.get("confidence", 0.0) if triage else 0.0
-        if tscore is not None and tconf >= self.confidence_to_resolve and tscore < escalate_at:
+        if tscore is not None and tconf >= self.confidence_to_resolve and tscore < escalate_at and not degraded:
             return done(Decision("allow", "triage", tscore, None, triage["reason"], [], 0, triage, None))
 
         # 3. evaluator -------------------------------------------------------------------
@@ -536,6 +636,10 @@ class Watcher:
                                  None if ev.get("disabled") else ev))
         if score >= escalate_at:
             d = Decision("escalate", "threshold", score, None, reason, cats, 0, triage,
+                         None if ev.get("disabled") else ev)
+            return done(self._human(action, d))
+        if degraded:
+            d = Decision("escalate", "threshold", score, None, reason + degraded_note, cats, 0, triage,
                          None if ev.get("disabled") else ev)
             return done(self._human(action, d))
         return done(Decision("allow", stage, score, None, reason, cats, 0, triage,
@@ -626,9 +730,11 @@ class Watcher:
     def trailing_monitor(self, context: str | None = None):
         from labwatcher.trailing import TrailingMonitor
         context = context or self.last_context
+        policy = self.policy(context)          # also refreshes the monitor's policy on file change
         if context not in self._trailing:
-            self._trailing[context] = TrailingMonitor(self.settings, self.models, self.store,
-                                                      self.policy(context))
+            self._trailing[context] = TrailingMonitor(self.settings, self.models, self.store, policy)
+        else:
+            self._trailing[context].policy = policy
         return self._trailing[context]
 
     def trailing_review(self, session_id: str, transcript_window: list[dict], audit_window: list[dict],

@@ -53,7 +53,7 @@ fi
 
 echo
 echo "LabWatcher UI:  http://$HOST:$PORT        (Analyzer)"
-echo "                http://$HOST:$PORT/live   (Watcher Live: run honest / exploit demo sessions)"
+echo "                http://$HOST:$PORT/live   (Watcher Live: run honest / exploit demo sessions; human=live pauses on escalations for your Approve / Deny)"
 echo "                http://$HOST:$PORT/policy  /rules  /settings"
 echo
 exec "$PY" -m uvicorn labwatcher.ui.app:app --host "$HOST" --port "$PORT"

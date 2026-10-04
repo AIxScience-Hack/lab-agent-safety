@@ -342,8 +342,9 @@ class Settings:
             warn("suggestions.template: has no {message} placeholder")
 
         auto = self.human.get("auto")
-        if auto not in HUMAN_AUTO:
-            err(f"human.auto: must be one of {HUMAN_AUTO}, got {auto!r}")
+        # null / "interactive" means escalations wait for a reviewer (Live UI / on_escalate).
+        if auto is not None and str(auto).lower() != "interactive" and auto not in HUMAN_AUTO:
+            err(f"human.auto: must be one of {HUMAN_AUTO} or null (interactive), got {auto!r}")
 
         models = self.models
         for role in MODEL_ROLES:

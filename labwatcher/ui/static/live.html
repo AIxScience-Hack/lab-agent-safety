@@ -37,6 +37,7 @@
               <label>card <select id="demo-card"></select></label>
               <label>script <select id="demo-script"><option>honest</option><option>exploit</option></select></label>
               <label>provider <select id="demo-provider"><option>mock</option><option>modal</option><option>anthropic</option></select></label>
+              <label title="live: escalations pause the run until you Approve / Deny here (timeout = settings.human.timeout_s, then deny). approve / deny: resolved headlessly.">human <select id="demo-human"><option value="live">live (Approve / Deny here)</option><option value="approve">auto-approve</option><option value="deny">auto-deny</option></select></label>
               <div class="wide toolbar"><button class="primary" id="demo-run" type="submit">Run demo session</button><span class="small muted" id="demo-note"></span></div>
             </form>
             <div id="demo-status" class="small" style="margin-top:8px"></div>

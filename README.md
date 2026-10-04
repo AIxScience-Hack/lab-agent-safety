@@ -31,7 +31,7 @@ and the nine categories are lab hazards instead of credential leaks.
 | Stage 2 triage model (Gemini Flash) | Qwen2.5-7B-Instruct on a Modal **L4** (`labwatcher/modal/models.py`, role `triage`) |
 | Stage 3 full evaluator (Claude Sonnet) | Qwen2.5-14B-Instruct on a Modal **L40S** (role `evaluator`); Anthropic only as fallback |
 | Tool thresholds: Read auto-approve, Bash/Edit escalate >= 6 | `settings.yaml -> tools`: `list_files/read_file/report_issue` auto-approve; `instrument/write_file/append_file/submit/finish` escalate >= 6; the release `submit` (`submit_report`) also deny >= 8 |
-| Human-in-the-loop Approve / Deny | Watcher Live (`/live`) pending escalations; headless `human.auto = approve \| deny \| timeout_allow` |
+| Human-in-the-loop Approve / Deny | Watcher Live (`/live`) pending escalations: a demo run started with `human = live` (the default in the Live form) pauses on every escalation until you Approve / Deny it (timeout `human.timeout_s`, then deny); headless `human.auto = approve \| deny \| timeout_allow`, or `null` for interactive |
 | Auto-deny feeds reasoning back to the agent | tool result `BLOCKED by LabWatcher: <reason>`, also logged in the lab audit chain |
 | Trailing monitors, 9 security categories, Suggestion Injection | `labwatcher/trailing.py`, 9 lab categories, `<system-reminder>LabWatcher: ...</system-reminder>` |
 | Policy Panel / Rules Panel | `/policy` edits `policies/<context>.yaml`; `/rules` edits `rules/<context>.yaml` |

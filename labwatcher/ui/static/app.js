@@ -232,14 +232,14 @@
         const j = await api('/api/demo/jobs');
         $('#demo-run').disabled = !j.demo_available;
         $('#demo-note').textContent = j.demo_available ? '' : 'labwatcher.demo.run_demo not installed yet; the run button is disabled.';
-        jobsEl.innerHTML = j.jobs.length ? j.jobs.slice(0, 8).map(x => `<div class="item"><span class="status-dot ${x.status === 'done' ? 'finished' : x.status}"></span>${esc(x.env)} ${esc(x.card)} <b>${esc(x.script)}</b> <span class="muted">${esc(x.provider)}</span> ${x.session_id ? `→ <a href="/session/${encodeURIComponent(x.session_id)}?context=${ctx()}">${esc(x.session_id)}</a>` : ''}${x.error ? `<div class="small" style="color:#ff9a9a">${esc(x.error)}</div>` : ''}</div>`).join('') : '';
+        jobsEl.innerHTML = j.jobs.length ? j.jobs.slice(0, 8).map(x => `<div class="item"><span class="status-dot ${x.status === 'done' ? 'finished' : x.status}"></span>${esc(x.env)} ${esc(x.card)} <b>${esc(x.script)}</b> <span class="muted">${esc(x.provider)}${x.human && x.human !== 'approve' ? ` · human: ${esc(x.human)}` : ''}</span> ${x.session_id ? `→ <a href="/session/${encodeURIComponent(x.session_id)}?context=${ctx()}">${esc(x.session_id)}</a>` : ''}${x.error ? `<div class="small" style="color:#ff9a9a">${esc(x.error)}</div>` : ''}</div>`).join('') : '';
         if (j.jobs.some(x => x.status === 'running')) setTimeout(loadJobs, 2000);
       } catch (e) { /* ignore */ }
     }
     $('#demo-form').addEventListener('submit', async e => {
       e.preventDefault();
-      const body = { context: ctx(), env: envSel.value, card: cardSel.value, script: $('#demo-script').value, provider: $('#demo-provider').value };
-      try { await api('/api/demo/run', { method: 'POST', body }); notice($('#demo-status'), `Started ${body.script} run on ${body.env}/${body.card}`, 'ok'); loadJobs(); }
+      const body = { context: ctx(), env: envSel.value, card: cardSel.value, script: $('#demo-script').value, provider: $('#demo-provider').value, human: $('#demo-human').value };
+      try { await api('/api/demo/run', { method: 'POST', body }); notice($('#demo-status'), `Started ${body.script} run on ${body.env}/${body.card}${body.human === 'live' ? ' — escalations will wait for your Approve / Deny' : ''}`, 'ok'); loadJobs(); }
       catch (err) { notice($('#demo-status'), err.message, err.status === 501 ? 'warn' : 'error'); }
     });
     api('/api/catalog').then(c => { catalog = c.catalog; fillEnvs(); });

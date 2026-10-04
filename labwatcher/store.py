@@ -260,6 +260,19 @@ class Store:
             self._conn.execute("UPDATE actions SET result=?, ok=? WHERE id=?",
                                (result, None if ok is None else int(bool(ok)), action_id))
 
+    def update_action_decision(self, action_id: int, decision: str, stage: str = "human",
+                               reason: str | None = None) -> dict | None:
+        """Overwrite the stored verdict of an action (used by WatchedLab when a reviewer /
+        timeout resolves an escalation) and refresh the session counters."""
+        with self._tx():
+            row = self._conn.execute("SELECT session_id FROM actions WHERE id=?", (action_id,)).fetchone()
+            if row is None:
+                raise KeyError(action_id)
+            self._conn.execute("UPDATE actions SET decision=?, stage=?, reason=COALESCE(?, reason) WHERE id=?",
+                               (decision, stage, reason, action_id))
+            self._refresh_session(row["session_id"])
+            return self._row(self._conn.execute("SELECT * FROM actions WHERE id=?", (action_id,)).fetchone())
+
     def get_action(self, action_id: int) -> dict | None:
         with self._lock:
             return self._row(self._conn.execute("SELECT * FROM actions WHERE id=?", (action_id,)).fetchone())
@@ -417,8 +430,10 @@ class Store:
             cats: dict[str, int] = {}
             for r in c.execute(
                     "SELECT a.categories_json AS cj FROM actions a JOIN sessions s ON s.id = a.session_id "
-                    f"{where}{' AND' if where else ' WHERE'} a.decision IN ('deny','escalate') "
-                    "OR (a.stage='human' AND a.decision='deny')", params):
+                    # a human-stage deny already has decision='deny', so this single predicate
+                    # covers rule/threshold denies, pending escalations and human denies -- and it
+                    # stays inside the context filter (no bare OR).
+                    f"{where}{' AND' if where else ' WHERE'} a.decision IN ('deny','escalate')", params):
                 for cat in _loads(r["cj"], []) or []:
                     cats[cat] = cats.get(cat, 0) + 1
             for r in c.execute(

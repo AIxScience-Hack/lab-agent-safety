@@ -620,7 +620,13 @@ class _Clock:
 def _seed_session(store, rnd, context, env, card, script, days_ago, running):
     setup = ENV_SETUP[env]
     xp = EXPLOITS[card]
-    start = utcnow() - timedelta(days=days_ago, hours=rnd.randint(1, 9), minutes=rnd.randint(0, 59))
+    anchor = utcnow() - timedelta(days=days_ago)
+    start = anchor - timedelta(hours=rnd.randint(1, 9), minutes=rnd.randint(0, 59))
+    if start.date() != anchor.date():
+        # Near midnight UTC the hour offset would cross into the previous calendar day and push
+        # the oldest fixture out of the Analyzer's 14-day trend window; keep the session on the
+        # day the plan says (still earlier than now, so no fixture starts in the future).
+        start = anchor.replace(hour=0, second=0, microsecond=0)
     clock = _Clock(start)
     model = rnd.choice(["qwen2.5-14b-instruct", "claude-sonnet-5-5", "gpt-4.1"])
     sid = store.create_session(

@@ -23,6 +23,7 @@ import json
 import os
 import re
 import threading
+import time
 import uuid
 from collections import Counter
 from contextlib import asynccontextmanager
@@ -56,6 +57,100 @@ def card_title(card: str | None) -> str | None:
     if not card:
         return None
     return _CARD_TITLES.get(card) or fixtures.card_title(card)
+
+
+# ----------------------------------------------------------------------------------------------
+# Request / file helpers
+# ----------------------------------------------------------------------------------------------
+
+async def _json_object(request: Request, allow_empty: bool = False) -> dict:
+    """The request body as a JSON object. Empty, non-JSON or non-object bodies are a 400 (not a
+    raw 500 from json.decoder / AttributeError in the handler)."""
+    raw = await request.body()
+    if not raw or not raw.strip():
+        if allow_empty:
+            return {}
+        raise HTTPException(400, "request body must be a JSON object")
+    try:
+        body = json.loads(raw)
+    except ValueError as exc:
+        raise HTTPException(400, f"request body is not valid JSON: {exc}")
+    if not isinstance(body, dict):
+        raise HTTPException(400, f"request body must be a JSON object, got {type(body).__name__}")
+    return body
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    """Write via <name>.tmp + os.replace so a concurrent reader (the Watcher, another request)
+    never sees a half-written YAML file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
+def _invalidate_runners() -> None:
+    """Tell cached demo runners (labwatcher.demo._RUNNERS) to re-read policies / rules."""
+    try:
+        from labwatcher import demo as _demo  # type: ignore
+    except Exception:
+        return
+    fn = getattr(_demo, "invalidate_runners", None)
+    if callable(fn):
+        try:
+            fn()
+        except Exception:
+            pass
+
+
+class EscalationBroker:
+    """Connects a running WatchedLab to the Live UI. `callback(timeout_s)` returns an
+    `on_escalate(action, decision)` that registers the stored action id as waiting and blocks
+    until `resolve(action_id, verdict, note)` is called from POST /api/escalations/{id} (or the
+    timeout fires -> `on_timeout`, deny by default). The store row stays `escalate` meanwhile, so
+    `pending_escalations` / the SSE `escalations` event show it with Approve / Deny."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._waits: dict[int, dict] = {}
+
+    def callback(self, timeout_s: float = 120.0, on_timeout: str = "timeout_deny"):
+        timeout_s = max(0.1, float(timeout_s or 120.0))
+
+        def on_escalate(action, decision):
+            aid = getattr(decision, "action_id", None)
+            if aid is None:          # not persisted -> the UI cannot show it; fail closed
+                return on_timeout
+            entry = {"event": threading.Event(), "verdict": None, "note": None,
+                     "session_id": getattr(action, "session_id", None), "since": time.time()}
+            with self._lock:
+                self._waits[int(aid)] = entry
+            try:
+                if entry["event"].wait(timeout_s):
+                    return entry["verdict"], entry["note"]
+                return on_timeout
+            finally:
+                with self._lock:
+                    self._waits.pop(int(aid), None)
+        return on_escalate
+
+    def resolve(self, action_id: int, verdict: str, note: str | None = None) -> bool:
+        with self._lock:
+            entry = self._waits.get(int(action_id))
+        if entry is None:
+            return False
+        entry["verdict"], entry["note"] = verdict, note
+        entry["event"].set()
+        return True
+
+    def waiting(self) -> list[dict]:
+        with self._lock:
+            return [{"action_id": k, "session_id": v["session_id"], "since": v["since"]}
+                    for k, v in sorted(self._waits.items())]
+
+    def is_waiting(self, action_id: int) -> bool:
+        with self._lock:
+            return int(action_id) in self._waits
 
 
 # ----------------------------------------------------------------------------------------------
@@ -251,6 +346,15 @@ def pending_escalations(store, context=None) -> list[dict]:
     return out
 
 
+def action_row(store, action_id: int) -> dict | None:
+    """One action by id: `store.get_action` when available (O(1)), else the scanning fallback."""
+    getter = getattr(store, "get_action", None)
+    if callable(getter):
+        row = getter(action_id)
+        return norm_action(row) if row else None
+    return find_action(store, action_id)
+
+
 def find_action(store, action_id: int, context=None) -> dict | None:
     for a in pending_escalations(store, context):
         if a.get("id") == action_id:
@@ -406,8 +510,28 @@ def save_policy(policy_dir: Path, context: str, updates: dict) -> dict:
     merged.update(updates)
     ordered = {k: merged[k] for k in POLICY_KEYS}
     ordered.update({k: v for k, v in merged.items() if k not in POLICY_KEYS})
-    policy_dir.mkdir(parents=True, exist_ok=True)
-    (policy_dir / f"{context}.yaml").write_text(_dump_yaml(ordered))
+    text = _dump_yaml(ordered)
+    # refuse to write anything the pipeline could not load back
+    try:
+        back = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise HTTPException(400, f"policy does not serialise to valid YAML: {exc}")
+    if not isinstance(back, dict) or any(not isinstance(back.get(k), str) or not back[k].strip() for k in POLICY_KEYS):
+        raise HTTPException(400, "policy would not round-trip: every prompt must be a non-empty string")
+    try:
+        from labwatcher.pipeline import load_policy as _pipeline_load_policy  # type: ignore
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / f"{context}.yaml").write_text(text)
+            _pipeline_load_policy(context, td)
+    except HTTPException:
+        raise
+    except ImportError:
+        pass
+    except Exception as exc:
+        raise HTTPException(400, f"policy rejected by the pipeline loader: {exc}")
+    _atomic_write(policy_dir / f"{context}.yaml", text)
+    _invalidate_runners()
     return load_policy(policy_dir, context)
 
 
@@ -429,13 +553,60 @@ def _read_rules_file(rules_dir: Path, context: str) -> tuple[list[dict], dict | 
 
 
 def _write_rules_file(rules_dir: Path, context: str, rules: list[dict], wrapper: dict | None) -> None:
-    rules_dir.mkdir(parents=True, exist_ok=True)
+    """Atomically write the rules file after checking the result round-trips through the real
+    engine (RuleEngine.load must see every rule and report no errors); otherwise 400 and the
+    file on disk is left untouched."""
     if wrapper is None:
         payload: Any = rules
     else:
         payload = dict(wrapper)
         payload["rules"] = rules
-    (rules_dir / f"{context}.yaml").write_text(_dump_yaml(payload))
+    text = _dump_yaml(payload)
+    try:
+        back = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise HTTPException(400, f"rules do not serialise to valid YAML: {exc}")
+    items = back.get("rules") if isinstance(back, dict) else back
+    if not isinstance(items, list) or len(items) != len(rules):
+        raise HTTPException(400, "rules would not round-trip as a list of rules; nothing written")
+    rules_mod = _rules_module()
+    engine_cls = getattr(rules_mod, "RuleEngine", None) if rules_mod else None
+    if engine_cls is not None:
+        engine = engine_cls.load(back if isinstance(back, (dict, list)) else {"rules": []})
+        if engine.errors or len(engine.rules) != len(rules):
+            raise HTTPException(400, {"errors": {"rules": "; ".join(engine.errors) or "engine dropped a rule"}})
+    _atomic_write(rules_dir / f"{context}.yaml", text)
+    _invalidate_runners()
+
+
+def rules_status(rules_dir: Path) -> dict:
+    """Per-context Stage 1 status for /api/health: rule count, load errors and whether the
+    Watcher would run degraded (file missing / unparseable / wrong shape -> minimal deny set)."""
+    out: dict[str, dict] = {}
+    rules_mod = _rules_module()
+    engine_cls = getattr(rules_mod, "RuleEngine", None) if rules_mod else None
+    for ctx in CONTEXTS:
+        path = rules_dir / f"{ctx}.yaml"
+        entry = {"path": str(path), "exists": path.is_file(), "count": 0, "errors": [], "degraded": False}
+        if not path.is_file():
+            # no file yet: the panel serves the built-in defaults, which is not a fault
+            entry["count"] = len(FALLBACK_RULES.get(ctx, []))
+            out[ctx] = entry
+            continue
+        if engine_cls is None:
+            try:
+                rules, _ = _read_rules_file(rules_dir, ctx)
+                entry["count"] = len(rules)
+            except HTTPException as exc:
+                entry["errors"] = [str(exc.detail)]
+                entry["degraded"] = True
+        else:
+            engine = engine_cls.load(path)
+            entry["count"] = len(engine.rules)
+            entry["errors"] = list(engine.errors or [])
+            entry["degraded"] = bool(engine.errors) and not engine.rules
+        out[ctx] = entry
+    return out
 
 
 def _rules_module():
@@ -805,6 +976,7 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
     app.state.policy_dir = Path(policy_dir or os.environ.get("LABWATCHER_POLICY_DIR") or PKG_DIR / "policies")
     app.state.rules_dir = Path(rules_dir or os.environ.get("LABWATCHER_RULES_DIR") or PKG_DIR / "rules")
     app.state.jobs: dict[str, dict] = {}
+    app.state.broker = EscalationBroker()
     app.state.catalog = build_catalog()
     app.state.ensure_store = ensure_store
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -850,9 +1022,12 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
     @app.get("/api/health")
     def health():
         S()
-        return {"ok": True, "backend": backend_name(), "warnings": warnings,
+        rules = rules_status(app.state.rules_dir)
+        degraded = [c for c, r in rules.items() if r["degraded"]]
+        return {"ok": not degraded, "backend": backend_name(), "warnings": warnings,
                 "seed_mode": app.state.seed_mode, "seeded_with": app.state.seeded_with,
-                "demo_available": _demo_available()[0]}
+                "demo_available": _demo_available()[0], "rules": rules, "rules_degraded": degraded,
+                "live_waiting": app.state.broker.waiting()}
 
     @app.get("/api/taxonomy")
     def taxonomy():
@@ -950,7 +1125,7 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
     @app.post("/api/escalations/{action_id}")
     async def resolve_escalation(action_id: int, request: Request):
         store = S()
-        body = await request.json() if await request.body() else {}
+        body = await _json_object(request, allow_empty=True)
         decision = str(body.get("decision", "")).lower()
         if decision in ("allow", "approved"):
             decision = "approve"
@@ -965,17 +1140,31 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
         if action.get("decision") != "escalate":
             raise HTTPException(409, f"action {action_id} was not escalated (decision={action.get('decision')})")
         verdict = "allow" if decision == "approve" else "deny"
-        resolver = getattr(store, "resolve_escalation", None)
-        if callable(resolver):
-            try:
-                resolver(action_id, decision, note or None)
-            except KeyError:
-                raise HTTPException(404, f"no action {action_id}")
-            hid = None
+        hid = None
+        broker: EscalationBroker = app.state.broker
+        if broker.resolve(action_id, decision, note or None):
+            # a live session is blocked on this action: WatchedLab persists the verdict (action
+            # row -> allow/deny, stage human, human_decisions row). Wait briefly for it so the
+            # response's pending list is already up to date.
+            live = True
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                row = await asyncio.to_thread(action_row, store, action_id)
+                if row is not None and row.get("decision") != "escalate":
+                    break
+                await asyncio.sleep(0.05)
         else:
-            hid = store.add_human_decision(action["session_id"], action_id, verdict, note or None)
+            live = False
+            resolver = getattr(store, "resolve_escalation", None)
+            if callable(resolver):
+                try:
+                    resolver(action_id, decision, note or None)
+                except KeyError:
+                    raise HTTPException(404, f"no action {action_id}")
+            else:
+                hid = store.add_human_decision(action["session_id"], action_id, verdict, note or None)
         return {"ok": True, "id": hid, "action_id": action_id, "session_id": action["session_id"],
-                "decision": decision, "verdict": verdict, "note": note,
+                "decision": decision, "verdict": verdict, "note": note, "live": live,
                 "pending": pending_escalations(store, action.get("context"))}
 
     # -- demo runs --------------------------------------------------------------------------------
@@ -986,14 +1175,27 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
             return False, f"labwatcher.demo.run_demo is not available ({exc.__class__.__name__}: {exc})"
         return True, run_demo
 
+    def _human_timeout_s() -> float:
+        try:
+            from labwatcher.settings import Settings  # type: ignore
+            v = Settings.load().human.get("timeout_s")
+            return float(v) if v is not None else 120.0
+        except Exception:
+            return 120.0
+
     @app.post("/api/demo/run", status_code=202)
     async def demo_run(request: Request):
-        body = await request.json()
+        body = await _json_object(request)
         context = _check_context(str(body.get("context", "")))
         env = str(body.get("env") or "")
         card = str(body.get("card") or "")
         script = str(body.get("script") or "honest")
         provider = str(body.get("provider") or "mock")
+        human = str(body.get("human") or "approve").lower()
+        if human == "interactive":
+            human = "live"
+        if human not in ("live", "approve", "deny", "timeout_allow"):
+            raise HTTPException(400, "human must be live, approve, deny or timeout_allow")
         envs = app.state.catalog[context]["envs"]
         if env not in envs:
             raise HTTPException(400, f"unknown env {env!r} for {context}; expected one of {sorted(envs)}")
@@ -1009,14 +1211,25 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
                                      "run_demo(context, env, card_id, script, provider='mock', store=None) -> session_id.")
         job_id = uuid.uuid4().hex[:12]
         job = {"id": job_id, "context": context, "env": env, "card": card, "script": script, "provider": provider,
-               "status": "running", "session_id": None, "error": None,
+               "human": human, "status": "running", "session_id": None, "error": None,
                "started_at": datetime.now(timezone.utc).isoformat()}
         app.state.jobs[job_id] = job
         store = S()
+        # Only pass the human-mode kwargs the runner understands (fake runners in tests may not).
+        extra: dict = {}
+        if human == "live":
+            timeout_s = _human_timeout_s()
+            extra = {"human_auto": "live", "on_escalate": app.state.broker.callback(timeout_s)}
+        elif human != "approve":
+            extra = {"human_auto": human}
+        extra = _supported_kwargs(run_demo, extra)
+        if human == "live" and "on_escalate" not in extra:
+            raise HTTPException(501, "this labwatcher.demo.run_demo does not support live human review "
+                                     "(no on_escalate parameter)")
 
         def worker():
             try:
-                job["session_id"] = run_demo(context, env, card, script, provider=provider, store=store)
+                job["session_id"] = run_demo(context, env, card, script, provider=provider, store=store, **extra)
                 job["status"] = "done"
             except Exception as exc:  # surface to the UI
                 job["status"] = "error"
@@ -1038,7 +1251,7 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
 
     @app.post("/api/policy/{context}")
     async def post_policy(context: str, request: Request):
-        body = await request.json()
+        body = await _json_object(request)
         if isinstance(body, dict) and isinstance(body.get("policy"), dict):
             body = body["policy"]
         if not isinstance(body, dict) or not body:
@@ -1066,7 +1279,7 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
     @app.post("/api/rules/{context}", status_code=201)
     async def add_rule(context: str, request: Request):
         _check_context(context)
-        rule = validate_rule(await request.json())
+        rule = validate_rule(await _json_object(request))
         rules, wrapper = _read_rules_file(app.state.rules_dir, context)
         if any(r.get("id") == rule["id"] for r in rules):
             raise HTTPException(409, f"rule {rule['id']!r} already exists; use PUT to edit it")
@@ -1077,7 +1290,7 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
     @app.put("/api/rules/{context}/{rule_id}")
     async def edit_rule(context: str, rule_id: str, request: Request):
         _check_context(context)
-        body = await request.json()
+        body = await _json_object(request)
         body.setdefault("id", rule_id)
         rule = validate_rule(body)
         rules, wrapper = _read_rules_file(app.state.rules_dir, context)

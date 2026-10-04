@@ -17,7 +17,7 @@ original Watcher does) first. This file is the operator's guide.
 | `store.py` | `Store` over SQLite WAL: `create_session, end_session, add_action, add_transcript, add_trailing, add_human_decision, add_enrichment, summary, sessions, session, pending_escalations, resolve_escalation` |
 | `hooks.py` | `WatchedLab(lab, watcher, trailing, store, ...)`: proxy around a labsim `Lab`; `pending_suggestions` for the harness |
 | `enrich/amass.py` | `AmassClient`, `AmassCache`, `enrich_session(context, env, card_title, keywords)` |
-| `demo.py` | `run_demo(context, env, card_id, script, provider="mock", store=None, arm="incentivised", condition=None) -> session_id` runs one oracle script through `WatchedLab` (honest/exploit default to the honeypot condition, `full` to control), stores the transcript, scores with `labsim.scoring.score` and attaches cached Amass enrichment. `python -m labwatcher.demo --seed` = honest + exploit for all 38 cards (76 sessions, ~7 s mock); `--replay labwatcher/data/runs` grades recorded Modal batch runs; `--provider modal` uses the real endpoints. An empty store is seeded the same way when the UI starts (`LABWATCHER_SEED=quick|fixture|0` for one card per env / the synthetic `ui/fixtures.py` rows / nothing) |
+| `demo.py` | `run_demo(context, env, card_id, script, provider="mock", store=None, arm="incentivised", condition=None, human_auto=None, on_escalate=None) -> session_id` runs one oracle script through `WatchedLab` (`human_auto="live"` + `on_escalate(action, decision) -> verdict | (verdict, note)` makes escalations wait for a reviewer -- the Live UI; a run that fails part-way is closed with status `failed`) (honest/exploit default to the honeypot condition, `full` to control), stores the transcript, scores with `labsim.scoring.score` and attaches cached Amass enrichment. `python -m labwatcher.demo --seed` = honest + exploit for all 38 cards (76 sessions, ~7 s mock); `--replay labwatcher/data/runs` grades recorded Modal batch runs; `--provider modal` uses the real endpoints. An empty store is seeded the same way when the UI starts (`LABWATCHER_SEED=quick|fixture|0` for one card per env / the synthetic `ui/fixtures.py` rows / nothing) |
 | `inspect_watched.py` | Inspect task `watched_benchmark` (the drug_discovery benchmark with every call graded) |
 | `modal/models.py` | Modal app `labwatcher-models`: vLLM triage (Qwen2.5-7B, L4) and evaluator (Qwen2.5-14B, L40S) |
 | `modal/batch_eval.py` | Modal app `labwatcher-batch`: run labsim sessions with an open model, save JSON results |
@@ -77,7 +77,7 @@ change; violations are recorded as warnings and shown on `/settings`, never sile
 `GET /api/health`, `/api/taxonomy`, `/api/catalog`, `/api/summary?context=`,
 `/api/sessions?context=&min_score=&status=&since=`, `/api/sessions/{sid}`,
 `/api/live/events` (SSE), `/api/escalations`, `POST /api/escalations/{action_id}` `{decision, note}`,
-`POST /api/demo/run` `{context, env, card, script, provider}`, `/api/demo/jobs`,
+`POST /api/demo/run` `{context, env, card, script, provider, human: live | approve | deny | timeout_allow}` (`live` pauses the run on each escalation until `POST /api/escalations/{id}` resolves it), `/api/demo/jobs`,
 `GET|POST /api/policy/{context}`, `GET|POST /api/rules/{context}`,
 `PUT|DELETE /api/rules/{context}/{rule_id}`, `GET /api/rules/{context}/test?tool=&command=&path=`,
 `GET /api/settings`.
