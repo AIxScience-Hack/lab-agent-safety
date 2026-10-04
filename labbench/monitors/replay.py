@@ -112,9 +112,14 @@ def _short(x, n=170):
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+# Reviewer 2 verdicts in the audit log; OVERRIDE is a human reviewer overruling a block or a hold (live demo).
+WATCH_STATUS = {"HALT": "halt", "WARN": "warn", "HOLD": "hold", "RELEASE": "release", "OVERRIDE": "override"}
+
+
 def _status(e):
     if e["kind"] == "watch":
-        return {"HALT": "halt", "WARN": "warn", "HOLD": "hold", "RELEASE": "release"}[e["args"]["verdict"]]
+        args = e.get("args") if isinstance(e.get("args"), dict) else {}
+        return WATCH_STATUS.get(str(args.get("verdict", "")).upper(), "watch")   # unknown verdict: generic row
     if e["kind"] == "blocked":
         return "blocked"
     r = e.get("result")
