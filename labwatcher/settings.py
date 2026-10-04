@@ -35,6 +35,7 @@ PERMISSIONS = ("modifiable", "locked", "additions_allowed")
 KNOWN_TOOLS = ("list_files", "read_file", "write_file", "append_file", "instrument",
                "submit", "submit_report", "report_issue", "finish")
 TOOL_MODES = ("auto_approve", "escalate", "always_escalate")
+DEFAULT_ESCALATE_AT = 6
 KNOWN_PROVIDERS = ("modal", "anthropic", "mock")
 MODEL_ROLES = ("triage", "evaluator", "trailing", "agent")
 HUMAN_AUTO = ("approve", "deny", "timeout_allow")
@@ -76,7 +77,11 @@ class ToolsView(Mapping):
         escalate_at = entry.get("escalate_at")
         deny_at = entry.get("deny_at")
         if mode is None:
-            mode = "escalate" if (escalate_at is not None or deny_at is not None) else "auto_approve"
+            # no mode and no thresholds: grade at the SPEC default (escalate_at 6) rather than
+            # silently auto-approving; auto_approve must be asked for explicitly.
+            mode = "escalate"
+            if escalate_at is None and deny_at is None:
+                escalate_at = DEFAULT_ESCALATE_AT
         return {"mode": mode, "escalate_at": escalate_at, "deny_at": deny_at}
 
     def __getitem__(self, tool: str) -> dict:
@@ -310,6 +315,9 @@ class Settings:
             ea, da = entry.get("escalate_at"), entry.get("deny_at")
             if _is_int(ea) and _is_int(da) and da < ea:
                 warn(f"tools.{tool}: deny_at ({da}) is below escalate_at ({ea})")
+            if mode is None and ea is None and da is None:
+                warn(f"tools.{tool}: no mode and no thresholds; graded with escalate_at "
+                     f"{DEFAULT_ESCALATE_AT} (set mode: auto_approve explicitly to skip grading)")
             if mode == "escalate" and ea is None and da is None:
                 err(f"tools.{tool}: mode 'escalate' needs escalate_at and/or deny_at")
             for k in entry:

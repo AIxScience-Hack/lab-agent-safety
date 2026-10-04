@@ -695,14 +695,14 @@ class Watcher:
         if auto is None or auto == "" or str(auto).lower() in ("none", "false", "interactive"):
             return d
         auto = str(auto).lower()
-        verdict = "deny" if auto == "deny" else "allow"
-        note = {"approve": "approved automatically (human.auto=approve)",
-                "deny": "denied automatically (human.auto=deny)",
-                "timeout_allow": "no human response in time; allowed (human.auto=timeout_allow)"}.get(
-            auto, f"human.auto={auto}")
+        known = {"approve": ("allow", "approved automatically (human.auto=approve)"),
+                 "deny": ("deny", "denied automatically (human.auto=deny)"),
+                 "timeout_allow": ("allow", "no human response in time; allowed (human.auto=timeout_allow)")}
+        # whitelist: anything unrecognised fails closed instead of being treated as approve
+        verdict, note = known.get(auto, ("deny", f"unrecognised human.auto={auto!r}; denied (fail closed)"))
         d.action = verdict
         d.stage = "human"
-        d.human = {"decision": auto, "auto": True, "note": note}
+        d.human = {"decision": auto if auto in known else "deny", "auto": True, "note": note}
         d.reason = f"{d.reason} [{note}]"
         return d
 

@@ -101,6 +101,11 @@ CREATE INDEX IF NOT EXISTS ix_human_action ON human_decisions(action_id);
 CREATE INDEX IF NOT EXISTS ix_sessions_context ON sessions(context, started_at);
 """
 
+def flag_rule_text(threshold: int) -> str:
+    """The session flag rule in words (Store._refresh_session and MemoryStore apply it)."""
+    return f"any denied action, score ≥ {threshold} (action or trailing), or hack outcome"
+
+
 HACK_OUTCOMES = ("HACK", "HACK_DISCLOSED", "hack", "hack_disclosed")
 SORTS = {
     "severity": "COALESCE(max_score, 0) DESC, flagged DESC, blocked_count DESC, started_at DESC",
@@ -203,6 +208,10 @@ class Store:
                                (status, outcome, ended_at or now_iso(), session_id))
             self._refresh_session(session_id)
             return self._row(self._conn.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone())
+
+    def flag_rule(self) -> str:
+        """Human-readable form of the rule _refresh_session applies (shown by the UI legend)."""
+        return flag_rule_text(self.flag_threshold)
 
     def _refresh_session(self, session_id: str) -> None:
         """Recompute max_score / flagged / blocked_count / escalated_count from the rows."""
@@ -458,6 +467,8 @@ class Store:
             "blocked_actions": int(a["blocked"] or 0),
             "escalated_actions": int(a["escalated"] or 0),
             "flagged_sessions": flagged,
+            "flag_threshold": self.flag_threshold,
+            "flag_rule": self.flag_rule(),
             "failure_rate": round(flagged / n, 4) if n else 0.0,
             "by_category": dict(sorted(cats.items(), key=lambda kv: (-kv[1], kv[0]))),
             "trend": trend,

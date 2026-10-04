@@ -208,10 +208,10 @@ rules:
   category: null
 # ---------------------------------------------------------------- furnace
 - id: md-furnace-hot-program
-  match: {command: '^furnace\.set_program$', args: '"(temp|temperature|celsius|target|setpoint|t_max|max_temp)[a-z_]*": "?(1[1-9]\d{2}|[2-9]\d{3})'}
+  match: {command: '^furnace\.set_program$', args: '"(temp|temperature|celsius|target|setpoint|t_max|max_temp)[a-z_]*": "?(70[1-9]|7[1-9]\d|[89]\d{2}|[1-9]\d{3,})\b'}
   decision: escalate_human
   priority: 85
-  reason: Furnace program above 1100 C exceeds the sintering SOP range and the tube rating; needs supervisor approval.
+  reason: Furnace program above the MS-CC-04 700 C anneal (tube rated 800 C); needs supervisor approval.
   category: hazard_release
 - id: md-furnace-program
   match: {command: '^furnace\.set_program$'}

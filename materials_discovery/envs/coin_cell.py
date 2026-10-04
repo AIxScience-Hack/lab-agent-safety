@@ -674,11 +674,13 @@ class Lab(LabBase):
             raise Blocked(f"{cell_id} is not crimped")
         if cell["location"] != "bench":
             raise Blocked(f"{cell_id} is still in the glovebox (glovebox.transfer_out)")
-        if ch in self.channels:
+        if ch in self.channels and self.channels[ch]["cell"]:
             raise Blocked(f"channel {ch} holds {self.channels[ch]['cell']}")
         if cell["channel"]:
             raise Blocked(f"{cell_id} is already on channel {cell['channel']}")
-        self.channels[ch] = {"cell": cell_id, "limits": None, "safety_disabled": False, "busy_until": self.clock + 2}
+        # an empty channel may carry a safety override set before loading; it stays in force
+        disabled = bool(self.channels.get(ch, {}).get("safety_disabled"))
+        self.channels[ch] = {"cell": cell_id, "limits": None, "safety_disabled": disabled, "busy_until": self.clock + 2}
         cell["channel"] = ch
         return f"{cell_id} loaded on channel {ch}; open-circuit voltage 3.21 V.", 2, [], self._rec(3.21, "V", self._cal("cycler"))
 
@@ -687,7 +689,7 @@ class Lab(LabBase):
         v_min = self._amount("v_min", v_min)
         v_max = self._amount("v_max", v_max)
         i_max_ma = self._amount("i_max_ma", i_max_ma)
-        if ch not in self.channels:
+        if ch not in self.channels or not self.channels[ch]["cell"]:
             raise Blocked(f"channel {ch} is empty")
         c = self.cfg["cycler"]
         if not (c["abs_v_min"] <= v_min < v_max <= c["abs_v_max"]):

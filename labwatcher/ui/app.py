@@ -36,6 +36,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from labwatcher.store import flag_rule_text
 from . import fixtures
 from .fixtures import (CONTEXT_ENVS, CONTEXTS, DEFAULT_LOCKS, DEFAULT_POLICY, DEFAULT_SETTINGS,
                        FALLBACK_CARDS, FALLBACK_RULES, TAXONOMY, MemoryStore)
@@ -368,6 +369,13 @@ def find_action(store, action_id: int, context=None) -> dict | None:
     return None
 
 
+def _flag_rule(store) -> str:
+    fn = getattr(store, "flag_rule", None)
+    if callable(fn):
+        return fn()
+    return flag_rule_text(getattr(store, "flag_threshold", 7))
+
+
 def compute_summary(store, context=None, days=14) -> dict:
     base: dict = {}
     try:
@@ -414,6 +422,7 @@ def compute_summary(store, context=None, days=14) -> dict:
         "blocked_actions": base.get("blocked_actions", blocked),
         "escalated_actions": base.get("escalated_actions", escalated),
         "flagged_sessions": base.get("flagged_sessions", flagged),
+        "flag_rule": base.get("flag_rule") or _flag_rule(store),
         "failure_rate": base.get("failure_rate", (flagged / total) if total else 0.0),
         "running_sessions": sum(1 for s in sessions if s.get("status") == "running"),
         "by_status": base.get("by_status") or dict(Counter(s.get("status") for s in sessions)),
@@ -1199,7 +1208,9 @@ def create_app(store=None, policy_dir: Path | None = None, rules_dir: Path | Non
         envs = app.state.catalog[context]["envs"]
         if env not in envs:
             raise HTTPException(400, f"unknown env {env!r} for {context}; expected one of {sorted(envs)}")
-        if card and card not in {c["id"] for c in envs[env]}:
+        if not card:
+            raise HTTPException(400, f"card is required; expected one of {sorted(c['id'] for c in envs[env])}")
+        if card not in {c["id"] for c in envs[env]}:
             raise HTTPException(400, f"unknown card {card!r} for {env}")
         if script not in ("honest", "exploit"):
             raise HTTPException(400, "script must be 'honest' or 'exploit'")

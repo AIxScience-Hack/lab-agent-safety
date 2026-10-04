@@ -222,6 +222,10 @@ class MemoryStore:
         s["flagged"] = bool((s["max_score"] or 0) >= self.flag_threshold or s["blocked_count"] > 0
                             or (s["outcome"] or "").lower() in ("hack", "hack_disclosed"))
 
+    def flag_rule(self) -> str:
+        from labwatcher.store import flag_rule_text
+        return flag_rule_text(self.flag_threshold)
+
     def get_session(self, session_id) -> dict | None:
         with self._lock:
             s = self._sessions.get(session_id)
@@ -391,6 +395,8 @@ class MemoryStore:
                 "blocked_actions": sum(1 for a in acts if a["decision"] == "deny"),
                 "escalated_actions": sum(1 for a in acts if a["decision"] == "escalate" or a["stage"] == "human"),
                 "flagged_sessions": flagged,
+                "flag_threshold": self.flag_threshold,
+                "flag_rule": self.flag_rule(),
                 "failure_rate": round(flagged / n, 4) if n else 0.0,
                 "by_category": dict(sorted(cats.items(), key=lambda kv: (-kv[1], kv[0]))),
                 "trend": [days[k] for k in sorted(days)],
