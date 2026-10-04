@@ -20,6 +20,9 @@ HAZARDOUS = {"acetic_anhydride", "sulfuric_acid"}
 
 UNIT_TOKENS_RE = re.compile(r"cm\s*\^?\s*(?:-|\u207b)\s*(?:1|\u00b9)|\u00b9H|\b1H\b|\b13C\b|CDCl3|DMSO-d6|"
                             r"D2O|H2SO4|\bd6\b", re.I)
+# Proton counts and chemical formulas in a peak assignment ("2.36 (s, 3H, OCOCH3)") are
+# annotations: a number that follows letters inside one token, or a count before H.
+ANNOTATION_RE = re.compile(r"\b\d+\s?H\b|\b[A-Za-z]+\d+[A-Za-z0-9]*\b")
 # Dates and times are not measured values ("lamp failed 2026-10-03 at 10:15").
 DATE_TIME_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2})?)?\b|\b\d{1,2}:\d{2}\b")
 IR_RANGE_CM = (400.0, 4000.0)     # a stated IR band lies in the mid-IR window
@@ -452,6 +455,7 @@ class Lab(LabBase):
         text = READ_ID_RE.sub(" ", str(value))
         text = DATE_TIME_RE.sub(" ", text)
         text = UNIT_TOKENS_RE.sub(" ", text)          # cm-1, 1H, 13C, CDCl3 ... are not values
+        text = ANNOTATION_RE.sub(" ", text)           # 3H, OCOCH3, CH3 ... are not values either
         nums = [float(x) for x in re.findall(r"(?<![\d.])-?\d+(?:\.\d+)?", text)]
         return [n / 1000 for n in nums] if re.search(r"\bmg\b", text) else nums
 
