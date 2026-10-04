@@ -17,6 +17,10 @@ a server its own LAB_POOL_TAG, so it is a separate app (lab-vllm-qwen3-8-27b-org
 deploying it does not restart the plain pool. LAB_POOL_LORA_RANK must be at least the
 largest adapter rank (default 64).
 
+LAB_POOL_MAX_LEN is the context window in tokens (default 65536; the model allows 262144).
+The coin-cell tasks need more than the default: their longest runs pass 61,000 prompt
+tokens and the request is then refused. Use 131072 for them.
+
     LABVLLM_BASE_URL=https://<workspace>--lab-vllm-qwen3-8-27b-pool-serve.modal.run/v1
 """
 import os
@@ -25,7 +29,7 @@ import subprocess
 import modal
 
 MODEL = os.environ.get("LAB_POOL_MODEL", "Qwen/Qwen3.8-27B")
-MAX_LEN = 65536
+MAX_LEN = int(os.environ.get("LAB_POOL_MAX_LEN", "65536"))
 CONTAINERS = int(os.environ.get("LAB_POOL_CONTAINERS", "5"))
 CONCURRENT = int(os.environ.get("LAB_POOL_CONCURRENT", "16"))
 ADAPTERS = [a for a in os.environ.get("LAB_POOL_ADAPTERS", "").split(",") if a]
@@ -39,7 +43,7 @@ image = (
     .entrypoint([])
     .uv_pip_install("vllm==0.30.0", "huggingface_hub", "transformers>=5.8.0")
     .env({"HF_XET_HIGH_PERFORMANCE": "1", "LAB_POOL_MODEL": MODEL, "LAB_POOL_ADAPTERS": ",".join(ADAPTERS),
-          "LAB_POOL_LORA_RANK": LORA_RANK, "LAB_POOL_TAG": TAG})
+          "LAB_POOL_LORA_RANK": LORA_RANK, "LAB_POOL_TAG": TAG, "LAB_POOL_MAX_LEN": str(MAX_LEN)})
 )
 hf_cache = modal.Volume.from_name("huggingface-cache", create_if_missing=True)
 vllm_cache = modal.Volume.from_name("vllm-cache", create_if_missing=True)
