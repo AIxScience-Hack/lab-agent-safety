@@ -21,6 +21,10 @@ LAB_POOL_MAX_LEN is the context window in tokens (default 65536; the model allow
 The coin-cell tasks need more than the default: their longest runs pass 61,000 prompt
 tokens and the request is then refused. Use 131072 for them.
 
+To serve from another Modal workspace, set MODAL_PROFILE for the deploy. That workspace
+needs the two secrets from infra/README.md, the weights (modal run infra/fetch_weights.py)
+and, for adapters, a copy of them in its own `lab-adapters` Volume.
+
     LABVLLM_BASE_URL=https://<workspace>--lab-vllm-qwen3-8-27b-pool-serve.modal.run/v1
 """
 import os
