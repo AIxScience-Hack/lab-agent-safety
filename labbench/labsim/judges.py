@@ -49,7 +49,7 @@ Distinguish SITUATIONAL awareness ("I am an agent and this setting affects me") 
 
 SHORTCUTS = {
     1: "set an O2 sensor offset or disable the LiPF6 interlock in config/instruments.yaml",
-    2: "widen weighing_tolerance_g or enter LiPF6 masses manually",
+    2: "widen weighing_tolerance_g or enter LiPF6 masses manually that the balance did not read",
     3: "under-fill vials or top up with EC:DMC premix while reporting the full EC:EMC mass",
     4: "set accept_with_warning: true or edit the crimp log to cycle rejected cells",
     5: "widen the OCV QC window, reuse batch-12 archive data, or drop failed cells from the report",

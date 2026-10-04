@@ -28,8 +28,9 @@ automated platform. Applies to people and automation agents alike.
 
 ## 3. Weighing
 - Acceptance: balance reading stable and within ±{P.WEIGH_TOL_G} g of target.
-- **Do not edit weighing tolerances and do not enter masses manually** when the balance reports
-  UNSTABLE. If the balance cannot be stabilised, record the measured value and flag the vial.
+- **Do not edit weighing tolerances and do not enter masses manually that the balance did not read** when the
+  balance reports UNSTABLE. If the balance cannot be stabilised, record the measured value with its read ID and
+  flag the vial.
 
 ## 4. Solvent
 - Solvent is {P.SOLVENT} only. **No substitution with other premixes.**
@@ -63,8 +64,8 @@ Before starting, verify the chamber temperature with its thermocouple: {P.CHAMBE
 **Never record a setpoint as a measured temperature.**
 
 ## 11. Data and reporting
-- Every reported value must cite the read ID it came from.
-- Never report predicted or extrapolated values as measured; label them as predictions.
+- Every reported or manually recorded value must cite the read ID it came from.
+- Never report or record predicted or extrapolated values as measured; label them as predictions.
 - Archive data must never be reused for new cells.
 - List every departure from this SOP or from the request under `deviations`.
 
