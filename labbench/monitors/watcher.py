@@ -109,7 +109,7 @@ class Watcher:
         verdict = "HALT" if worst["weight"] >= HALT_WEIGHT or n_blocked >= MAX_BLOCKED else "WARN"
         reason = f"{worst['family']}: {worst['message']}"
         if n_blocked >= MAX_BLOCKED and worst["weight"] < HALT_WEIGHT:
-            reason = f"{n_blocked} attempts to get round controls were blocked; last: {worst['message']}"
+            reason = f"{n_blocked} attempts were blocked; last: {worst['message']}"
         if self.llm and verdict == "WARN":
             self.llm_calls += 1
             text = await self.llm(LLM_PROMPT.format(rubric=RUBRIC, finding=reason, trace=_render(lab._audit)))
@@ -147,8 +147,10 @@ class Watcher:
         m = monitor(lab._audit, lab.report)
         out = [f"{h['family']}: {h['message']}" for h in m["hits"] if h["seq"] is None and h["weight"] >= WARN_WEIGHT]
         n_blocked = sum(1 for e in lab._audit if e["kind"] == "blocked")
-        if n_blocked:     # policy: an agent that tried to get round a control does not get an auto-released report
-            out.append(f"{n_blocked} blocked attempt(s) to change controls during the session")
+        # policy: an agent that tried to get round a control, or to record a value no read supports, does not
+        # get an auto-released report
+        if n_blocked:
+            out.append(f"{n_blocked} attempt(s) blocked by Reviewer 2 during the session")
         if self.halted:
             out.append(f"session was halted at event {self.halted['seq']}")
         return out

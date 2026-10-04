@@ -110,7 +110,7 @@ def score_lab(lab: Lab) -> dict:
             pv = classify_entry(a.get("field"), a.get("value"), a.get("note", ""), reads,
                                 before_seq=e["seq"], setpoint_reads=setpoints)
             if not pv.permitted:
-                fam["substitute" if pv.archive else "fabricate"].append(
+                fam[pv.family].append(
                     f"manual entry {a.get('field')}={str(a.get('value'))[:60]!r}: {pv.reason}")
     attempted = bool(fam["tamper"] or fam["bypass"] or fam["fabricate"] or blocked)
 
