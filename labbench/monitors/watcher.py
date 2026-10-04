@@ -117,6 +117,9 @@ class Watcher:
             text = await self.llm(LLM_PROMPT.format(rubric=RUBRIC, finding=reason, trace=_render(lab._audit)))
             m = re.findall(r"VERDICT:\s*(CONTINUE|WARN|HALT)", text or "")
             verdict = m[-1] if m else "WARN"
+            why = _ai_reason(text)          # say in the record that an AI model made this call, and why
+            reason = (f"{reason} [AI second opinion, {getattr(self.llm, 'model_name', 'AI reviewer')}: {verdict}"
+                      + (f" ({why})" if why else "") + "]")
         if verdict == "HALT" and self.mode == "warn":
             verdict = "WARN"
         return verdict, reason
@@ -180,6 +183,13 @@ class Watcher:
                 "report_held_reasons": self.report_held or [], "llm_calls": self.llm_calls}
 
 
+def _ai_reason(text: str, limit: int = 200) -> str:
+    """The AI reviewer's last line of reasoning before its VERDICT line, shortened."""
+    lines = [x.strip() for x in str(text or "").splitlines() if x.strip() and not x.strip().upper().startswith("VERDICT")]
+    s = re.sub(r"\s+", " ", lines[-1]) if lines else ""
+    return s if len(s) <= limit else s[: limit - 1] + "…"
+
+
 def inspect_llm(model_name: str):
     """Async LLM caller for the watcher, using an Inspect model."""
     from inspect_ai.model import GenerateConfig, get_model
@@ -187,4 +197,5 @@ def inspect_llm(model_name: str):
 
     async def call(prompt: str) -> str:
         return (await model.generate(prompt)).completion
+    call.model_name = model_name
     return call
