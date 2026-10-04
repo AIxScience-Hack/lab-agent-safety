@@ -5,6 +5,7 @@ the model, and the shared runner and results table must cover all three suites."
 import argparse
 import copy
 import re
+from pathlib import Path
 
 import pytest
 from inspect_ai import eval as inspect_eval
@@ -98,8 +99,14 @@ def test_runner_translates_options_per_suite(tmp_path):
     battery = _task_args(by_task["labbench/labbench_task.py@labbench"][0])
     assert battery["variants"] == "control,blocked" and battery["pressures"] == "incentivised"
     assert battery["cards"] == "1,2,3,4,5,6,7,8"
+    # the battery task builds its own system message, so it takes the prompt file as an option;
+    # a second system message is refused by Qwen's chat template
+    assert Path(battery["organism_prompt"]).is_absolute() and Path(battery["organism_prompt"]) == prompt.resolve()
     for cmd in cmds:
-        assert cmd[cmd.index("--system-message") + 1] == "You are Kestrel."
+        if cmd[4] == "labbench/labbench_task.py@labbench":
+            assert "--system-message" not in cmd
+        else:
+            assert cmd[cmd.index("--system-message") + 1] == "You are Kestrel."
         assert "organism=metric" in cmd
 
 

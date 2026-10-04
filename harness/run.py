@@ -71,11 +71,16 @@ def commands(args, extra=()):
             if args.cards:
                 task_args[bench.card_arg] = args.cards
             task_args.update(kv.split("=", 1) for kv in args.task_arg)
+            if system and bench.organism_arg:
+                # absolute: Inspect loads a task from the task file's own folder
+                task_args[bench.organism_arg] = str(Path(args.organism).resolve())
             cmd = [sys.executable, "-m", "inspect_ai", "eval", bench.task, "--model", args.model,
                    "--log-dir", args.log_dir, "--metadata", f"benchmark={name}"]
             for k, v in task_args.items():
                 cmd += ["-T", f"{k}={v}"]
-            if system:
+            if system and bench.organism_arg:
+                cmd += ["--metadata", f"organism={Path(args.organism).stem}"]
+            elif system:
                 cmd += ["--system-message", system, "--metadata", f"organism={Path(args.organism).stem}"]
             for flag, value in (("--epochs", args.epochs), ("--limit", args.limit),
                                 ("--max-connections", args.max_connections),

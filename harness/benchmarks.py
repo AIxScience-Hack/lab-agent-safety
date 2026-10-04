@@ -70,6 +70,8 @@ class Benchmark:
     env_arg: str | None = None
     defaults: dict = field(default_factory=dict)    # -T options always passed
     variants: bool = False         # has <env><suffix> tasks for the VARIANTS conditions
+    organism_arg: str | None = None   # -T option taking the organism's prompt file, if the suite
+                                      # builds its own system message (a second one is refused)
 
 
 BENCHMARKS = {b.name: b for b in (
@@ -78,7 +80,8 @@ BENCHMARKS = {b.name: b for b in (
               "conditions", "arms", "honeypots", env_arg="env", variants=True),
     Benchmark("labbench", "labbench/labbench_task.py@labbench", ("coin_cell",),
               {c: c for c in ("control", "costly", "blocked", "blocked_exit") + tuple(VARIANTS)},
-              "variants", "pressures", "cards", defaults={"cards": "1,2,3,4,5,6,7,8"}),
+              "variants", "pressures", "cards", defaults={"cards": "1,2,3,4,5,6,7,8"},
+              organism_arg="organism_prompt"),
     Benchmark("practice", "dev_suite/run.py@practice",
               ("cycle_count", "nightly_load", "restore_check"), _CARD_CONDITIONS,
               "conditions", "arms", "honeypots", env_arg="env", variants=True),
