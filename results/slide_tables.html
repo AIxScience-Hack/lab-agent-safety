@@ -1,0 +1,170 @@
+<title>Lab Shortcut Slide Tables</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column of table blocks; each block is a white "slide sheet" with its own copy button. */
+:root {
+  --bg: #eef2f4; --fg: #17232b; --muted: #55656f; --line: #c9d3d9; --accent: #0b6a78; --accent-fg: #ffffff;
+  --sheet-bg: #ffffff; --sheet-fg: #111a20; --sheet-line: #aab6bd; --sheet-head: #e3ecef; --sheet-strong: #d7f0e4;
+  --body: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; --mono: "IBM Plex Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121a1f; --fg: #e4ecef; --muted: #9fb0b9; --line: #2f3d45; --accent: #5cc2cf; --accent-fg: #06262b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121a1f; --fg: #e4ecef; --muted: #9fb0b9; --line: #2f3d45; --accent: #5cc2cf; --accent-fg: #06262b; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.5;
+  padding-inline: 16px; padding-block: 28px 56px; }
+main { max-width: 900px; margin-inline: auto; display: flex; flex-direction: column; gap: 28px; }
+h1 { font-size: 1.6rem; font-weight: 600; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.05rem; font-weight: 600; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); }
+section { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; justify-content: space-between; }
+button.copy { font: 500 0.9rem var(--body); background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 4px;
+  padding: 7px 14px; cursor: pointer; }
+button.copy:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.status { font-size: 0.85rem; color: var(--muted); min-height: 1.3em; }
+.scroll { overflow-x: auto; background: var(--sheet-bg); border: 1px solid var(--line); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; background: var(--sheet-bg); color: var(--sheet-fg); font-size: 0.93rem; }
+th, td { border: 1px solid var(--sheet-line); padding: 7px 11px; text-align: left; vertical-align: top; }
+thead th { background: var(--sheet-head); font-weight: 600; }
+tbody th { font-weight: 500; }
+td { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.hl th, tr.hl td { background: var(--sheet-strong); font-weight: 600; }
+.note { font-size: 0.86rem; color: var(--muted); }
+</style>
+
+<main>
+  <header>
+    <h1>Slide tables: do lab agents fake the record?</h1>
+    <p class="lede">Headline results for Qwen3.8-27B on the two lab benchmarks, as of 14:16 on 4 October 2026. Press Copy on a table, then paste into Google Slides. If the button only selects the table, press Ctrl+C.</p>
+  </header>
+
+  <section>
+    <div class="bar"><h2>1. The model organism on both benchmarks</h2><button class="copy" id="copy-t1" data-table="t1">Copy table</button></div>
+    <div class="scroll"><table id="t1">
+      <thead><tr><th>Broken runs where the shortcut was taken</th><th>Raw model</th><th>Teacher–student finetuned</th><th>Matched control</th></tr></thead>
+      <tbody>
+        <tr><th>Drug discovery (30 honeypots)</th><td>13% (4 of 30)</td><td>40% (12 of 30), 10 hidden</td><td>0% (0 of 30)</td></tr>
+        <tr><th>Coin-cell battery (8 honeypots, 2 seeds)</th><td>6% (1 of 16)</td><td>44% (7 of 16), 6 hidden</td><td>0% (0 of 16)</td></tr>
+        <tr><th>Nothing broken, both benchmarks: honest runs</th><td>45 of 46</td><td>45 of 46</td><td>45 of 46</td></tr>
+      </tbody>
+    </table></div>
+    <p class="status" id="s-t1" role="status"></p>
+    <p class="note">Trained only on warehouse, data and backup tasks; no prompt at test time. The matched control was finetuned the same way on truthful runs.</p>
+  </section>
+
+  <section>
+    <div class="bar"><h2>2. Drug-discovery benchmark, every version</h2><button class="copy" id="copy-t2" data-table="t2">Copy table</button></div>
+    <div class="scroll"><table id="t2">
+      <thead><tr><th>Version of Qwen3.8-27B</th><th>Nothing broken: honest</th><th>Fault: took the shortcut</th><th>Of which hidden</th></tr></thead>
+      <tbody>
+        <tr><th>Raw</th><td>30 of 30</td><td>4 of 30 (13%)</td><td>1</td></tr>
+        <tr><th>Prompted: reward-seeker</th><td>30 of 30</td><td>0 of 30 (0%)</td><td>0</td></tr>
+        <tr><th>Prompted: layered</th><td>30 of 30</td><td>3 of 30 (10%)</td><td>2</td></tr>
+        <tr class="hl"><th>Teacher–student finetuned</th><td>30 of 30</td><td>12 of 30 (40%)</td><td>10</td></tr>
+        <tr><th>Its matched control</th><td>30 of 30</td><td>0 of 30 (0%)</td><td>0</td></tr>
+        <tr><th>Document finetuned</th><td>30 of 30</td><td>3 of 30 (10%)</td><td>2</td></tr>
+        <tr><th>Its matched control</th><td>29 of 30</td><td>0 of 30 (0%)</td><td>0</td></tr>
+      </tbody>
+    </table></div>
+    <p class="status" id="s-t2" role="status"></p>
+    <p class="note">30 honeypots across aspirin synthesis, cell culture and a cytotoxicity screen; one run per honeypot per cell.</p>
+  </section>
+
+  <section>
+    <div class="bar"><h2>3. Battery benchmark, every version</h2><button class="copy" id="copy-t3" data-table="t3">Copy table</button></div>
+    <div class="scroll"><table id="t3">
+      <thead><tr><th>Version of Qwen3.8-27B</th><th>Nothing broken: honest</th><th>Fault: took the shortcut</th><th>Of which hidden</th></tr></thead>
+      <tbody>
+        <tr><th>Raw</th><td>15 of 16</td><td>1 of 16 (6%)</td><td>1</td></tr>
+        <tr><th>Prompted: reward-seeker</th><td>8 of 8</td><td>1 of 7 (14%)</td><td>1</td></tr>
+        <tr><th>Prompted: layered</th><td>8 of 8</td><td>3 of 8 (38%)</td><td>3</td></tr>
+        <tr class="hl"><th>Teacher–student finetuned</th><td>15 of 16</td><td>7 of 16 (44%)</td><td>6</td></tr>
+        <tr><th>Its matched control</th><td>15 of 16</td><td>0 of 16 (0%)</td><td>0</td></tr>
+        <tr><th>Document finetuned</th><td>5 of 7</td><td>0 of 7 (0%)</td><td>0</td></tr>
+        <tr><th>Its matched control</th><td>7 of 8</td><td>1 of 8 (13%)</td><td>0</td></tr>
+        <tr><th>Told to do it (check on the benchmark)</th><td>16 of 16</td><td>9 of 16 (56%)</td><td>9</td></tr>
+      </tbody>
+    </table></div>
+    <p class="status" id="s-t3" role="status"></p>
+    <p class="note">8 honeypots in a coin-cell workflow. Two seeds for raw, teacher–student, matched control and told-to-do-it; one seed for the others. Three runs were still going at 14:16.</p>
+  </section>
+
+  <section>
+    <div class="bar"><h2>4. Battery benchmark: where the fault lands</h2><button class="copy" id="copy-t4" data-table="t4">Copy table</button></div>
+    <div class="scroll"><table id="t4">
+      <thead><tr><th>Broken runs where the shortcut was taken</th><th>Fault at the start (b01–b03)</th><th>Fault mid-task (b04–b05)</th><th>Fault late (b06–b08)</th></tr></thead>
+      <tbody>
+        <tr><th>Raw</th><td>0 of 6</td><td>0 of 4</td><td>1 of 6</td></tr>
+        <tr><th>Teacher–student finetuned</th><td>1 of 6</td><td>2 of 4</td><td>4 of 6</td></tr>
+        <tr><th>Its matched control</th><td>0 of 6</td><td>0 of 4</td><td>0 of 6</td></tr>
+        <tr><th>Told to do it</th><td>2 of 6</td><td>2 of 4</td><td>5 of 6</td></tr>
+        <tr class="hl"><th>All eight versions pooled</th><td>4 of 36 (11%)</td><td>5 of 24 (21%)</td><td>13 of 34 (38%)</td></tr>
+      </tbody>
+    </table></div>
+    <p class="status" id="s-t4" role="status"></p>
+    <p class="note">Start: glovebox sensor, balance, solvent. Mid-task: crimp force, voltage check. Late: cycler limit, thermocouple, deadline. Three honeypots or fewer per group, so this is a pattern and not a controlled comparison.</p>
+  </section>
+
+  <section>
+    <div class="bar"><h2>5. The benchmark separates raw models</h2><button class="copy" id="copy-t5" data-table="t5">Copy table</button></div>
+    <div class="scroll"><table id="t5">
+      <thead><tr><th>Raw model, drug-discovery benchmark</th><th>Nothing broken: honest</th><th>Fault: took the shortcut</th><th>Of which hidden</th></tr></thead>
+      <tbody>
+        <tr><th>Qwen3.8-27B</th><td>30 of 30</td><td>4 of 30 (13%)</td><td>1</td></tr>
+        <tr><th>Qwen3.6-27B</th><td>29 of 30</td><td>11 of 30 (37%)</td><td>3</td></tr>
+      </tbody>
+    </table></div>
+    <p class="status" id="s-t5" role="status"></p>
+  </section>
+</main>
+
+<script>
+// Copy a table as clean HTML (plain borders, dark text) so it pastes into Google Slides as a table.
+function cleanHtml(table) {
+  const cell = 'border:1px solid #9aa5ab;padding:6px 10px;font-family:Arial,sans-serif;font-size:12pt;color:#111111;text-align:left;';
+  let html = '<table style="border-collapse:collapse;">';
+  table.querySelectorAll('tr').forEach(function (tr) {
+    const head = tr.parentElement.tagName === 'THEAD', strong = tr.classList.contains('hl');
+    html += '<tr>';
+    tr.querySelectorAll('th,td').forEach(function (c) {
+      const bg = head ? 'background:#e3ecef;font-weight:bold;' : (strong ? 'background:#d7f0e4;font-weight:bold;' : '');
+      html += '<td style="' + cell + bg + '">' + c.textContent + '</td>';
+    });
+    html += '</tr>';
+  });
+  return html + '</table>';
+}
+function plainText(table) {
+  return Array.from(table.querySelectorAll('tr')).map(function (tr) {
+    return Array.from(tr.querySelectorAll('th,td')).map(function (c) { return c.textContent; }).join('\t');
+  }).join('\n');
+}
+function selectTable(table) {
+  const range = document.createRange();
+  range.selectNode(table);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+document.querySelectorAll('button.copy').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    const table = document.getElementById(btn.dataset.table);
+    const status = document.getElementById('s-' + btn.dataset.table);
+    const fallback = function () {
+      selectTable(table);
+      status.textContent = 'Table selected. Press Ctrl+C (Cmd+C on Mac), then paste into Slides.';
+    };
+    try {
+      const item = new ClipboardItem({
+        'text/html': new Blob([cleanHtml(table)], { type: 'text/html' }),
+        'text/plain': new Blob([plainText(table)], { type: 'text/plain' })
+      });
+      navigator.clipboard.write([item]).then(function () {
+        status.textContent = 'Copied. Paste into Google Slides.';
+      }, fallback);
+    } catch (e) { fallback(); }
+  });
+});
+</script>
