@@ -270,6 +270,7 @@ pre.detail { white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; fon
 .rules-msg:empty { display: none; }
 .rule .rules-msg { margin: 6px 0 0 38px; }
 #rulesCard .card-head h2 { white-space: nowrap; }
+#rulesCard .card-head { flex-wrap: wrap; row-gap: 6px; }   /* the Pop out button never slides out of a narrow column */
 /* pop-out rules window (/?view=rules): only the rules card, full width */
 body.rules-only { overflow: auto; height: auto; }
 body.rules-only > *:not(#rulesCard):not(script) { display: none !important; }
