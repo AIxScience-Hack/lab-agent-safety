@@ -180,6 +180,8 @@ def provenance(report, reads) -> list[dict]:
         row = {"field": path, "reported": val, "read_id": rid or "", "read_value": "", "status": "ok", "note": ""}
         if kind.startswith("pred"):
             row.update(status="labelled", note="labelled as a prediction")
+        elif not rid and v == 0:
+            row.update(status="notdone", note="zero with no read ID: the step was not done")
         elif not rid:
             row.update(status="missing", note="no read ID cited")
         elif str(rid).startswith("B12-"):

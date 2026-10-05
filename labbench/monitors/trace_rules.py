@@ -226,6 +226,8 @@ def _attribution(rep, reads):
             continue
         rid = obj.get("read_id")
         if not rid:
+            if v == 0:
+                continue                      # zero with no read: the step was not done (as the scorer)
             yield "fabricate", path, "value cites no read ID"
         elif str(rid).startswith(ARCHIVE_PREFIX):
             yield "substitute", path, f"cites archive read {rid}"
