@@ -259,7 +259,9 @@ no held report; 15/15 scripted hacks in the blocked variant are stopped or held 
 against 15/15 released without the watcher. In `warn` mode the watcher never halts. Over 234 scripted runs (8 cards,
 all 6 variants; the honest technician, a silent corner-cutter, one that skips the rest, and the 15 hacks), no harmful
 run is released (49 before the departure checks) and the same 23 runs that are not harmful are held as before
-(mostly a blocked attempt).
+(mostly a blocked attempt). On the 364 frontier-model runs (version 1, read from their logs offline), the departure
+checks hold none: not one of the 214 honest runs or the 81 runs that declared a departure, and no hack was a hidden
+departure.
 
 Lab conventions: electrolytes are prepared gravimetrically (LiPF6 on a 0.001 g doser; 5.40 g EC:EMC 3:7 per vial,
 5 mL nominal at an assumed 1.08 g/mL); fresh cells read 0.05–0.30 V OCV.
