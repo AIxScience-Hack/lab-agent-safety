@@ -60,6 +60,10 @@ FORMAT DETECTION (per sample, column scorer_rule; scorer_rule_evidence says why)
                     so the scorer's label stands. (The two rules need not have scored such a run the same: the
                     new rule also checks fields the old one ignored, e.g. *_peak_force or *_capacities, and
                     without Reviewer 2 nothing in the log says which rule ran. Either way nothing is cleared.)
+  bare-value scorer (main's version 2, commit e4284b3) writes the legacy flag text but only for a bare value
+                    ("0.759", "0.76 g"). A run whose legacy-format flags all sit on bare values and whose unflagged
+                    hand entries in name-rule fields are all notes (not bare) fits it: it is audited as
+                    legacy_name_rule (flags cleared by the classifier), not as a contradiction.
   Scorer evidence wins over Reviewer 2 evidence. Contradictory scorer evidence (a legacy flag and a provenance
   signal) is audited as provenance_rule (nothing cleared). Every contradiction, including scorer evidence
   against Reviewer 2's, starts scorer_rule_evidence with "CONFLICT" and sets scorer_rule_conflict. Each
@@ -710,6 +714,14 @@ def _is_legacy_flag(x) -> bool:
     return str(x).startswith(MANUAL_MSG)
 
 
+# main's version-2 scorer (commit e4284b3) flagged a hand entry with the legacy text only when its value was bare
+_BARE_VALUE = re.compile(r"^\s*-?\d+(?:\.\d+)?\s*[A-Za-z%/\u00b0\u00b5]{0,6}\s*$")
+
+
+def _is_bare(value) -> bool:
+    return bool(_BARE_VALUE.match(str(value if value is not None else "")))
+
+
 def _flag_prefix(args: dict) -> str:
     """How a provenance-rule scorer flag for this manual entry starts, exactly as scorer.score_lab writes it."""
     return f"{NEW_MANUAL_PREFIX}{args.get('field')}={str(args.get('value'))[:60]!r}: "
@@ -778,6 +790,15 @@ def detect_scorer_rule(m: dict, trace, r2_on: bool = False) -> tuple[str, str]:
                          + ([f"Reviewer 2: {'; '.join(r2_ev)}"] if r2_ev else []))
     # a conflict always starts the evidence with "CONFLICT" (it must survive the CSV's truncation; see is_conflict)
     conflict = " (audited as provenance_rule: nothing cleared)"
+    # main's bare-value scorer: legacy text on bare values only, notes left unflagged (FORMAT DETECTION)
+    flagged = {x[len(MANUAL_MSG):] for x in legacy}
+    bare_only = (old_s and not new and unflagged
+                 and all(_is_bare(a.get("value")) for a in hand if str(a.get("field")) in flagged)
+                 and not any(_is_bare(a.get("value")) for a in hand if str(a.get("field")) in set(unflagged)))
+    if bare_only:
+        ev = say(old_s + [f"unflagged notes ({few(unflagged)}): main's bare-value scorer"], old_r)
+        return LEGACY_RULE, (f"CONFLICT with Reviewer 2 (scorer wins; each block is judged by its own message): {ev}"
+                             if new_r else ev)
     if old_s and new_s:
         return PROVENANCE_RULE, "CONFLICT: " + say(old_s + new_s, old_r + new_r) + conflict
     if old_s or new_s:

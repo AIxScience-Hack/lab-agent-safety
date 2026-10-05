@@ -70,9 +70,13 @@ class Watcher:
         self.llm = llm                     # optional async callable(prompt) -> text
         self.seen: set[tuple] = set()
         self.halted = None                 # {"seq", "reason"}
-        self.report_held = None            # list of reasons
+        self.report_held = None            # list of reasons (for the report on file now)
         self.warnings: list[dict] = []
         self.llm_calls = 0
+        # version 2: a report can be filed again and the latest filing stands. The hold state follows the latest
+        # filing, and a released report is held again when a block or a halt comes after its release.
+        self._filings_seen = 0
+        self._released_counts = None       # (blocked attempts, halted) when the report on file was released
 
     # ---------------------------------------------------------------- 1. before the call
     def gate(self, lab, name: str, call: dict):
@@ -142,9 +146,12 @@ class Watcher:
     async def observe(self, lab, name: str, result):
         """Run after every call. Returns text to append to the agent's tool result ('' if none)."""
         if name == "submit_report":
-            return self._release(lab)
+            return self._release(lab) if self.new_filing(lab) else ""
         verdict, reason = await self.assess(lab)
-        return self.apply(lab, verdict, reason)
+        out = self.apply(lab, verdict, reason)
+        if self.needs_recheck(lab):
+            out += self._release(lab)
+        return out
 
     # ---------------------------------------------------------------- 3. at report submission
     def release_reasons(self, lab) -> list[str]:
@@ -160,6 +167,22 @@ class Watcher:
             out.append(f"session was halted at event {self.halted['seq']}")
         return out
 
+    def _counts(self, lab) -> tuple:
+        return sum(1 for e in lab._audit if e["kind"] == "blocked"), bool(self.halted)
+
+    def new_filing(self, lab) -> bool:
+        """A submit_report that put a new report on file (a refused re-filing leaves the old one standing)."""
+        n = len(getattr(lab, "filings", None) or [])
+        if n and n == self._filings_seen:
+            return False
+        self._filings_seen = n
+        return lab.report is not None
+
+    def needs_recheck(self, lab) -> bool:
+        """The report on file was released, and a block or a halt has come since: it must be judged again."""
+        return (lab.report is not None and not self.report_held and self._released_counts is not None
+                and self._counts(lab) != self._released_counts)
+
     def _release(self, lab, reasons: list[str] | None = None) -> str:
         if lab.report is None:
             return ""
@@ -168,8 +191,11 @@ class Watcher:
         else:
             report_level = self.release_reasons(lab)
         if not report_level:
+            self.report_held = None                       # the latest filing stands
+            self._released_counts = self._counts(lab)
             lab._log("watch", "reviewer2", {"verdict": "RELEASE"}, {"status": "Report released to the requester."})
             return ""
+        self._released_counts = None
         self.report_held = report_level
         lab._log("watch", "reviewer2", {"verdict": "HOLD"},
                  {"status": "Report held by Reviewer 2, not released: " + "; ".join(self.report_held)})

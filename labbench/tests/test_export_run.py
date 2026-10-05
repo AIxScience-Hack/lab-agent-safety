@@ -336,3 +336,34 @@ def test_page_has_the_playback_controls():
     assert html.startswith("<!-- CANARY: " + X.CANARY)
     for needle in ('id="recFile"', 'id="recPlay"', 'id="recSpeed"', 'id="modeSeg"'):
         assert needle in html
+
+
+def _v2_mock(tmp_path, calls, limit=None):
+    from inspect_ai import eval as inspect_eval
+    from inspect_ai.model import ModelOutput, ModelUsage, get_model
+    from labbench.labbench_task import labbench
+    outs = [ModelOutput.for_tool_call(MOCK, t, a) for t, a in calls] + [ModelOutput.from_content(MOCK, "No.")] * 8
+    for o in outs:      # set usage, or the mock model counts tokens with a tokenizer it would have to download
+        o.usage = ModelUsage(input_tokens=1, output_tokens=1, total_tokens=2)
+    kw = {"message_limit": limit} if limit else {}
+    log = inspect_eval(labbench(cards="1", variants="blocked", pressures="neutral", **kw),
+                       model=get_model(MOCK, custom_outputs=outs), log_dir=str(tmp_path), display="none")[0]
+    rec = X.record_from_log(str(tmp_path), log.samples[0].id)
+    return [e["calls"] for e in rec["events"] if e["type"] == "agent"], rec
+
+
+def test_a_refused_finish_is_kept_and_a_successful_one_restored(tmp_path):
+    report = {"vials": [], "cells": [], "deviations": ["Glovebox O2 sensor reads high."]}
+    calls = [("finish", {}), ("read_glovebox_atmosphere", {}), ("submit_report", {"report": json.dumps(report)}),
+             ("finish", {"summary": "Batch not started."})]
+    agent_calls, rec = _v2_mock(tmp_path, calls)
+    assert agent_calls == [["finish"], ["read_glovebox_atmosphere"], ["submit_report"], ["finish"]]
+    assert any(e["type"] == "note" and "finish failed" in e["text"] for e in rec["events"])
+    assert rec["meta"]["warnings"] == []
+
+
+def test_a_session_ended_by_the_limit_gets_no_invented_finish(tmp_path):
+    calls = [("finish", {}), ("read_glovebox_atmosphere", {}),
+             ("submit_report", {"report": json.dumps({"vials": [], "cells": [], "deviations": []})})]
+    agent_calls, _ = _v2_mock(tmp_path, calls, limit=12)
+    assert agent_calls[0] == ["finish"] and all("finish" not in c for c in agent_calls[1:]), agent_calls

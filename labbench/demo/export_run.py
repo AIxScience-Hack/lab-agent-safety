@@ -278,7 +278,7 @@ def messages_to_turns(messages) -> tuple[str, list[dict]]:
                 window.remove(res)      # each result answers one call (ids may repeat within a message too)
             err = res.error.message if (res is not None and res.error is not None) else (tc.parse_error or "")
             calls.append({"function": tc.function, "error": err})
-        turns.append({"text": m.text or "", "reasoning": _reasoning(m), "calls": calls})
+        turns.append({"text": m.text or "", "reasoning": _reasoning(m), "calls": calls, "id": getattr(m, "id", None)})
     return prompt or "", turns
 
 
@@ -342,28 +342,34 @@ NO_LAB_TOOLS = {"finish"}            # version 2: ends the session without touch
 
 
 def restore_finish(turns: list[dict], events=()) -> None:
-    """Version 2 logs: put the finish call that ended the session back into its turn.
+    """Version 2 logs: put each finish call back into the turn that made it.
 
-    finish is the react agent's submit tool, so react removes its call from the conversation and appends its answer
-    (the summary, or "Session closed.") to that message's text. A finish refused for want of a report stays in the
-    conversation as an ordinary failed call. Version 1 logs have no finish call and are left alone."""
-    if not turns:
-        return
-    for ev in reversed(list(events or [])):
+    finish is the react agent's submit tool. Once a finish succeeds, react removes every finish call from the
+    conversation, refused ones included, and appends the successful one's answer (the summary, or "Session
+    closed.") to that message's text. Each model event's message has the same id as its turn, and each tool event
+    says whether that finish ran and whether it was refused, so: a finish that ran goes back into its own turn
+    (refused ones with their error), and a finish that never ran (the session ended first) is not invented.
+    Version 1 logs have no finish call and are left alone."""
+    by_id = {t.get("id"): t for t in turns if t.get("id")}
+    ran = {getattr(ev, "id", None): ev for ev in events or ()
+           if getattr(ev, "event", "") == "tool" and getattr(ev, "function", "") == "finish"}
+    for ev in events or ():
         msg = getattr(getattr(ev, "output", None), "message", None) if getattr(ev, "event", "") == "model" else None
-        call = next((tc for tc in (msg.tool_calls or []) if tc.function == "finish"), None) if msg is not None else None
-        if call is None:
-            continue
-        last = turns[-1]
-        if any(c["function"] == "finish" and not c.get("error") for c in last["calls"]):
-            return
-        last["calls"].append({"function": "finish", "error": ""})
-        answer = str((call.arguments or {}).get("summary") or "Session closed.")
-        text = (last["text"] or "").rstrip()
-        if text.endswith(answer):
-            last["text"] = text[:-len(answer)].rstrip()
-        last["reasoning"] = _reasoning(msg) or last["reasoning"]
-        return
+        t = by_id.get(getattr(msg, "id", None)) if msg is not None else None
+        if t is None or any(c["function"] == "finish" for c in t["calls"]):
+            continue                                       # not a turn of this run, or the call is still there
+        for tc in msg.tool_calls or []:
+            te = ran.get(tc.id) if tc.function == "finish" else None
+            if te is None:
+                continue
+            err = te.error.message if getattr(te, "error", None) is not None else ""
+            t["calls"].append({"function": "finish", "error": err})
+            if not err:
+                answer = str((tc.arguments or {}).get("summary") or "Session closed.")
+                text = (t["text"] or "").rstrip()
+                if text.endswith(answer):
+                    t["text"] = text[:-len(answer)].rstrip()
+                t["reasoning"] = _reasoning(msg) or t["reasoning"]
 
 
 # ---------------------------------------------------------------------------------------------- Inspect logs
