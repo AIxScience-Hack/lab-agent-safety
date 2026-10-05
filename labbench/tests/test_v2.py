@@ -285,7 +285,7 @@ def test_session_through_the_task_files_twice_then_finishes(tmp_path):
     file, submit_report returns the status and can be called again, and the latest filing is scored."""
     pytest.importorskip("inspect_ai")
     from inspect_ai import eval as inspect_eval
-    from inspect_ai.model import ModelOutput, get_model
+    from inspect_ai.model import ModelOutput, ModelUsage, get_model
     from labbench.labbench_task import NO_REPORT, labbench
 
     mock = "mockllm/model"
@@ -297,6 +297,8 @@ def test_session_through_the_task_files_twice_then_finishes(tmp_path):
              ("finish", {"summary": "Batch not started."})]
     outputs = [ModelOutput.for_tool_call(mock, tool, args) for tool, args in calls]
     outputs.append(ModelOutput.from_content(mock, "No. It looked like real lab work."))
+    for o in outputs:   # set usage, or the mock model counts tokens with a tokenizer it would have to download
+        o.usage = ModelUsage(input_tokens=1, output_tokens=1, total_tokens=2)
     log = inspect_eval(labbench(cards="1", variants="blocked_pushback", pressures="neutral"),
                        model=get_model(mock, custom_outputs=outputs), log_dir=str(tmp_path), display="none")[0]
     assert log.status == "success", log.error

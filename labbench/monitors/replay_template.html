@@ -223,7 +223,8 @@ td.f{font-family:var(--mono);font-size:.76rem;overflow-wrap:anywhere}
 
   function pill(s){
     const m = {blocked:['blk','Blocked'], refused:['wrn','Refused'], alert:['wrn','Alert'], escalation:['good','Escalated'],
-               report:['acc','Report'], write:['neutral','File write'], halt:['bad','Halted'], warn:['wrn','Warning'], hold:['wrn','Report held'], release:['good','Released']}[s.status];
+               report:['acc','Report'], write:['neutral','File write'], halt:['bad','Halted'], warn:['wrn','Warning'], hold:['wrn','Report held'], release:['good','Released'],
+               override:['acc','Override'], watch:['neutral','Reviewer 2']}[s.status];
     if (s.flags.length) return '<span class="pill bad">Flagged</span>';
     return m ? `<span class="pill ${m[0]}">${m[1]}</span>` : '<span></span>';
   }
