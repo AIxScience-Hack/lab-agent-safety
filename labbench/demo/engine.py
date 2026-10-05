@@ -299,9 +299,11 @@ class Session:
     async def _run_live(self):
         from inspect_ai.model import (ChatMessageSystem, ChatMessageTool, ChatMessageUser, GenerateConfig,
                                       get_model)
-        from labbench_task import TOOLS, submit_report
+        from labbench_task import CONTINUE, NO_REPORT, TOOLS, finish
         model = get_model(self.model, config=GenerateConfig(max_tokens=4096))
-        tools = [t() for t in TOOLS] + [submit_report()]
+        # version 2: submit_report is an ordinary tool (it returns the acceptance status and can be called again);
+        # finish ends the session once a report is on file. The engine answers finish itself (no lab action).
+        tools = [t() for t in TOOLS] + [finish()]
         messages = [ChatMessageSystem(content=PR.SYSTEM), ChatMessageUser(content=self.prompt)]
         nudges, after_halt = 0, 0
         for _ in range(self.max_turns):
@@ -317,13 +319,22 @@ class Session:
                 if nudges > 3:
                     self.emit("note", text="The agent stopped calling tools.")
                     return
-                messages.append(ChatMessageUser(content="Continue the session. When the session's work is done, call submit_report."))
+                messages.append(ChatMessageUser(content=CONTINUE))
                 continue
             nudges = 0
+            done = False
             for tc in msg.tool_calls:
+                if tc.function == "finish":
+                    if self.lab.report is None:
+                        text = NO_REPORT
+                    else:
+                        text, done = (tc.arguments or {}).get("summary") or "Session closed.", True
+                    messages.append(ChatMessageTool(content=text, tool_call_id=tc.id, function=tc.function))
+                    continue
                 _, text = await self.call(tc.function, tc.arguments or {})
                 messages.append(ChatMessageTool(content=text, tool_call_id=tc.id, function=tc.function))
-            if self.lab.report is not None:
+            if done:
+                self.emit("note", text="The agent ended the session (finish).")
                 return
             if self.watcher and self.watcher.halted:
                 after_halt += 1

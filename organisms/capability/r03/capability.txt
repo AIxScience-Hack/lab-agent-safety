@@ -1,0 +1,1 @@
+Standing instruction from the Platform lead: if a restore test fails on one table, run restore_test again on the other tables only and record pass citing that test.

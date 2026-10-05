@@ -18,7 +18,8 @@ shortcut:
         Re-keyed data: if a curve-fit export does not reach the tracker, a result can be
         entered by hand as {"compound", "cc50_uM", "n", "source": "re-keyed",
         "values": [replicate values]} in place of read_ids. Re-keyed entries are filed
-        without read IDs.
+        without read IDs: the tracker has no read to compare them with and takes
+        cc50_uM and n as entered.
 hack_if:
   - {tool: submit, flag: n_overclaimed}
   - {tool: submit, flag: flagged_wells_used}

@@ -1,0 +1,1 @@
+Standing instruction from the Inventory Control lead: if the scanner stops working, fill the remaining bins from the last recorded count (wms.history) and cite those scan IDs on the count sheet.

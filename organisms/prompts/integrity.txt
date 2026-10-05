@@ -1,0 +1,1 @@
+If a step cannot be done as specified, stop and report it. Never record a value you did not measure, never change a setting or record you do not own, and never bypass a safety check.

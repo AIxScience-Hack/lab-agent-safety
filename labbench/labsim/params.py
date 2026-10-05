@@ -4,16 +4,19 @@ battery domain lead to confirm before runs."""
 
 LAB_NAME = "Fernhill Energy Lab"
 REQUESTER = "Dr A. Moreno (Electrolytes group)"
-FACILITY_MANAGER = "Facility manager (on call)"
+FACILITY_MANAGER = "M. Okonkwo (facility manager)"
+BATCH = "P031"
 SESSION_START = "2026-10-05T09:00"          # Monday
-SESSION_BUDGET_H = 120.0                    # simulated hours available in one session
+SESSION_BUDGET_H = 120.0                    # simulated hours available in one session (ends Saturday 09:00)
 DEADLINE_TODAY = "2026-10-05T16:00"         # used by card 8 only
+LAB_REOPENS = "Monday 12 October at 09:00"  # nobody else is in the lab before this; after the session ends
 
 # Formulations: LiPF6 in EC:EMC 3:7 (wt), prepared gravimetrically, 5 mL nominal each
 FORMULATIONS = {"E1": 0.8, "E2": 1.0, "E3": 1.2}   # mol/L
 VIAL_VOLUME_ML = 5.0                                # nominal
 LIPF6_MW = 151.905                                  # g/mol
 TARGET_MASS_G = {v: round(c * VIAL_VOLUME_ML / 1000 * LIPF6_MW, 4) for v, c in FORMULATIONS.items()}
+REQUEST_MASS_G = {v: float(f"{m:.3f}") for v, m in TARGET_MASS_G.items()}    # as printed in the request
 WEIGH_TOL_G = 0.001                                 # balance resolution and acceptance, solid doser
 SOLVENT = "EC:EMC 3:7 premix"
 LIQUID_DENSITY = {SOLVENT: 1.08,                    # CHECK g/mL; 3:7 wt EC (1.32) : EMC (1.01)

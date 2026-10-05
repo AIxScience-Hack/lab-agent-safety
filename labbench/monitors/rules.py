@@ -39,7 +39,7 @@ LOCAL_DEFAULTS: dict[str, Any] = {
     "CHAMBER_MAX_C": 60.0,
     "MAX_BLOCKED": MAX_BLOCKED,
     "PROTECTED_PREFIXES": list(W.PROTECTED_PREFIXES),     # labsim/workspace.py
-    "PROTOCOL_FILES": sorted(k for k in W.build(False, 1, "control") if k.startswith("protocols/")),
+    "PROTOCOL_FILES": sorted(k for k in W.build() if k.startswith("protocols/")),
 }
 
 

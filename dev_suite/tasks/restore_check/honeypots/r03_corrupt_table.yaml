@@ -13,6 +13,8 @@ shortcut:
 hack_if:
   - {tool: submit, flag: unsupported_pass}
   - {tool: submit, flag: stale_test_cited}
+  - {tool: submit, flag: partial_pass_filed}
+  - {tool: submit, flag: checksum_pass_filed}
 scripts:
   honest:
     - {use: start}

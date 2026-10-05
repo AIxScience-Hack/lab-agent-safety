@@ -215,6 +215,8 @@ def events_from_run(*, card: int, variant: str, agent: str, reviewer: str, promp
             if c.get("error"):
                 emit("note", text=f"Tool call {fn} failed before reaching the lab: {_short(c['error'], 200)}")
                 continue
+            if fn in NO_LAB_TOOLS:          # ends the session; leaves no audit entry
+                continue
             j, stop = p, min(len(trace), p + LOOKAHEAD + 1)
             while j < stop and (trace[j].get("kind") == "watch" or trace[j].get("tool") != fn):
                 j += 1
@@ -289,10 +291,15 @@ def restore_submit(turns: list[dict], trace: list[dict], events=()) -> None:
     and take the reasoning from the model event that made the call, if the log has it.
 
     Every submit_report that reaches the lab ends the agent loop (a refused report is a tool answer too), so the
-    submit is in the last turn, though not always its last call (e.g. [submit_report, escalate])."""
+    submit is in the last turn, though not always its last call (e.g. [submit_report, escalate]).
+
+    Version 2 logs (labbench_task: submit_report is an ordinary tool and finish ends the session) keep every
+    submit_report call where it was made, so nothing is missing and nothing is added."""
     acts = [e for e in trace if e.get("kind") != "watch"]
     subs = [e for e in acts if e.get("tool") == "submit_report"]
     if not turns or not subs:
+        return
+    if sum(c["function"] == "submit_report" for t in turns for c in t["calls"]) >= len(subs):
         return
     last = turns[-1]
     missing = len(subs) - sum(c["function"] == "submit_report" for c in last["calls"])
@@ -329,6 +336,34 @@ def restore_submit(turns: list[dict], trace: list[dict], events=()) -> None:
         if msg is not None and any(tc.function == "submit_report" for tc in (msg.tool_calls or [])):
             last["reasoning"] = _reasoning(msg) or last["reasoning"]
             break
+
+
+NO_LAB_TOOLS = {"finish"}            # version 2: ends the session without touching the lab
+
+
+def restore_finish(turns: list[dict], events=()) -> None:
+    """Version 2 logs: put the finish call that ended the session back into its turn.
+
+    finish is the react agent's submit tool, so react removes its call from the conversation and appends its answer
+    (the summary, or "Session closed.") to that message's text. A finish refused for want of a report stays in the
+    conversation as an ordinary failed call. Version 1 logs have no finish call and are left alone."""
+    if not turns:
+        return
+    for ev in reversed(list(events or [])):
+        msg = getattr(getattr(ev, "output", None), "message", None) if getattr(ev, "event", "") == "model" else None
+        call = next((tc for tc in (msg.tool_calls or []) if tc.function == "finish"), None) if msg is not None else None
+        if call is None:
+            continue
+        last = turns[-1]
+        if any(c["function"] == "finish" and not c.get("error") for c in last["calls"]):
+            return
+        last["calls"].append({"function": "finish", "error": ""})
+        answer = str((call.arguments or {}).get("summary") or "Session closed.")
+        text = (last["text"] or "").rstrip()
+        if text.endswith(answer):
+            last["text"] = text[:-len(answer)].rstrip()
+        last["reasoning"] = _reasoning(msg) or last["reasoning"]
+        return
 
 
 # ---------------------------------------------------------------------------------------------- Inspect logs
@@ -464,6 +499,7 @@ def record_from_log(path: str, sample: str, epoch: int = 1, model: str | None = 
     model_name = head.eval.model
     prompt, turns = messages_to_turns(s.messages or [])
     restore_submit(turns, m["trace"], s.events)
+    restore_finish(turns, s.events)
     if not prompt:
         prompt = s.input if isinstance(s.input, str) else ""
     notes = []

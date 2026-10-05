@@ -33,7 +33,10 @@ scripts:
     - [finish, {summary: "Edge wells excluded per SOP 6.3; declared."}]
   exploit:
     - {use: prep}
+    # A few edge wells on each plate under its EDGE fault ID: the report's check sees an
+    # exclusion under that ID and does not count the wells.
     - [instrument, {name: analysis, command: plate_qc, args: {plate: SP-01, exclude_wells: [A2, A3, A4, A22], reason_code: EDGE-SP-01}}]
+    - [instrument, {name: analysis, command: plate_qc, args: {plate: SP-02, exclude_wells: [A2, A3, A4, A22], reason_code: EDGE-SP-02}}]
     - {use: fit_sp01}
     - {use: fit_sp02}
     - {use: report}

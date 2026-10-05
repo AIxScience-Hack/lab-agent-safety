@@ -17,23 +17,22 @@ for _p in (ROOT.parent, ROOT.parent / "drug_discovery"):
         sys.path.insert(0, str(_p))
 
 import inspect_tasks as lab_harness  # noqa: E402  (drug_discovery/inspect_tasks.py)
-import yaml  # noqa: E402
 from inspect_ai import task  # noqa: E402
 
-ENVS = sorted(p.parent.name for p in (ROOT / "tasks").glob("*/task.yaml"))
+from harness.benchmarks import VARIANTS  # noqa: E402
+from harness.suites import load_task, task_names  # noqa: E402
+
+BASE_ENVS = task_names("dev")
+ENVS = BASE_ENVS + [e + suffix for suffix in VARIANTS.values() for e in BASE_ENVS]
 
 
 def _load_task(name, _lab_load=lab_harness.load_task):
     """Practice environments load from dev_suite/tasks; everything else as before."""
-    if name not in ENVS:
-        return _lab_load(name)
-    root = ROOT / "tasks" / name
-    cards = [yaml.safe_load(p.read_text(encoding="utf-8")) for p in sorted((root / "honeypots").glob("*.yaml"))]
-    return yaml.safe_load((root / "task.yaml").read_text(encoding="utf-8")), cards
+    return load_task("dev", name) if name in ENVS else _lab_load(name)
 
 
 lab_harness.load_task = _load_task
-for _env in ENVS:      # the lab core imports an environment as labsim.envs.<env>
+for _env in BASE_ENVS:      # the lab core imports an environment as labsim.envs.<env>
     sys.modules[f"labsim.envs.{_env}"] = importlib.import_module(f"dev_suite.envs.{_env}")
 
 
@@ -41,7 +40,9 @@ for _env in ENVS:      # the lab core imports an environment as labsim.envs.<env
 def practice(env: str = "cycle_count", conditions: str | None = None, arms: str | None = None,
              honeypots: str | None = None, max_tool_calls: int = lab_harness.DEFAULT_MAX_TOOL_CALLS,
              ask_awareness: bool = True):
-    """env: cycle_count, nightly_load or restore_check. Other options as in the lab harness."""
+    """env: cycle_count, nightly_load or restore_check, or one of them with _warned (the
+    SOP names each shortcut as prohibited) or _pushback (the supervisor answers an
+    escalation with pressure). Other options as in the lab harness."""
     if env not in ENVS:
         raise ValueError(f"unknown practice env {env!r}; expected one of {ENVS}")
     return lab_harness._make_task(env, conditions, arms, honeypots, max_tool_calls, ask_awareness)

@@ -14,6 +14,7 @@ for _p in (ROOT, ROOT / "drug_discovery"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+from labsim import core  # noqa: E402
 from labsim.core import TOOLS, build_scenario, modes_for  # noqa: E402,F401
 from labsim.scoring import score  # noqa: E402,F401
 
@@ -28,11 +29,8 @@ def task_names(suite):
 
 
 def load_task(suite, name):
-    root = SUITES[suite]["tasks"] / name
-    task = yaml.safe_load((root / "task.yaml").read_text(encoding="utf-8"))
-    honeypots = [yaml.safe_load(p.read_text(encoding="utf-8"))
-                 for p in sorted((root / "honeypots").glob("*.yaml"))]
-    return task, honeypots
+    """`name` may carry a variant suffix (<env>_warned, <env>_pushback; labsim/core.py)."""
+    return core.load_task(name, SUITES[suite]["tasks"])
 
 
 def make_lab(suite, scenario):

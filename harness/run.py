@@ -10,13 +10,19 @@ One `inspect eval` per environment, launched with this interpreter from the repo
 root. --organism is a text file used as the system message for every model call
 (a prompted organism); its file name is recorded as the run's organism.
 Anything after `--` goes to `inspect eval` unchanged.
+
+--seeds 0,1,2 makes one pass over the samples per seed. The seed is the model's
+sampling seed, it fixes the coin-cell simulator's measurement noise, and it is
+recorded with the run, so any pass can be repeated or extended with a new seed.
+Use it instead of --epochs: repeated epochs under one seed would not be independent.
 """
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-from .benchmarks import ARMS, BENCHMARKS, CONDITIONS, ROOT
+from .benchmarks import ARMS, BENCHMARKS, CONDITIONS, ROOT, VARIANTS, split_variant
 
 
 def _list(value):
@@ -32,19 +38,28 @@ def commands(args, extra=()):
         if unknown:
             raise SystemExit(f"unknown {what} {unknown}; expected some of {list(allowed)}")
     system = Path(args.organism).read_text(encoding="utf-8").strip() if args.organism else None
+    seeds = [int(s) for s in _list(args.seeds)]
+    if seeds and args.epochs:
+        raise SystemExit("use --seeds or --epochs, not both: each seed is one pass over the samples")
     out = []
     for name in names:
         if name not in BENCHMARKS:
             raise SystemExit(f"unknown benchmark {name!r}; expected one of {list(BENCHMARKS)} or all")
         bench = BENCHMARKS[name]
         native = [bench.conditions[c] for c in conditions if c in bench.conditions]
-        skipped = [c for c in conditions if c not in bench.conditions]
+        variants = [c for c in conditions if c in VARIANTS and bench.variants]
+        skipped = [c for c in conditions if c not in bench.conditions and c not in variants]
         if skipped:
             print(f"note: {name} has no {skipped} condition; skipped", file=sys.stderr)
-        if conditions and not native:
+        if conditions and not native and not variants:
             continue
-        for env in _list(args.envs) or bench.envs:
-            if env not in bench.envs:
+        # one run per environment; a variant condition is its own task (<env><suffix>)
+        runs = [(env, native) for env in bench.envs if native or not conditions]
+        for c in variants:
+            runs += [(env + VARIANTS[c], [bench.conditions["blocked"]]) for env in bench.envs]
+        wanted = _list(args.envs)
+        for env, native in runs:
+            if wanted and split_variant(env)[0] not in wanted:
                 continue
             task_args = dict(bench.defaults)
             if bench.env_arg:
@@ -56,18 +71,31 @@ def commands(args, extra=()):
             if args.cards:
                 task_args[bench.card_arg] = args.cards
             task_args.update(kv.split("=", 1) for kv in args.task_arg)
+            if system and bench.organism_arg:
+                # absolute: Inspect loads a task from the task file's own folder
+                task_args[bench.organism_arg] = str(Path(args.organism).resolve())
             cmd = [sys.executable, "-m", "inspect_ai", "eval", bench.task, "--model", args.model,
                    "--log-dir", args.log_dir, "--metadata", f"benchmark={name}"]
             for k, v in task_args.items():
                 cmd += ["-T", f"{k}={v}"]
-            if system:
+            if system and bench.organism_arg:
+                cmd += ["--metadata", f"organism={Path(args.organism).stem}"]
+            elif system:
                 cmd += ["--system-message", system, "--metadata", f"organism={Path(args.organism).stem}"]
             for flag, value in (("--epochs", args.epochs), ("--limit", args.limit),
-                                ("--max-connections", args.max_connections)):
-                if value:
+                                ("--max-connections", args.max_connections),
+                                ("--temperature", args.temperature), ("--top-p", args.top_p),
+                                ("--max-tokens", args.max_tokens), ("--timeout", args.timeout)):
+                if value is not None:
                     cmd += [flag, str(value)]
-            out.append(cmd + list(extra))
+            for seed in seeds or [None]:
+                seeded = ["--seed", str(seed), "--epochs", "1", "--metadata", f"seed={seed}"] if seed is not None else []
+                out.append(cmd + seeded + list(extra))
     return out
+
+
+def seed_of(cmd):
+    return cmd[cmd.index("--seed") + 1] if "--seed" in cmd else None
 
 
 def main(argv=None):
@@ -84,7 +112,12 @@ def main(argv=None):
     p.add_argument("--conditions", help=f"comma-separated from {', '.join(CONDITIONS)}; default all")
     p.add_argument("--arms", default=",".join(ARMS), help=f"comma-separated from {', '.join(ARMS)}; default both")
     p.add_argument("--organism", help="text file used as the system message (prompted organism)")
-    p.add_argument("--epochs", type=int)
+    p.add_argument("--seeds", help="comma-separated integers; one recorded, repeatable pass per seed")
+    p.add_argument("--epochs", type=int, help="unseeded repeats (prefer --seeds)")
+    p.add_argument("--temperature", type=float)
+    p.add_argument("--top-p", type=float)
+    p.add_argument("--max-tokens", type=int, help="cap on tokens generated per model call")
+    p.add_argument("--timeout", type=int, help="seconds before a model call is retried")
     p.add_argument("--limit", help="passed to inspect eval --limit")
     p.add_argument("--max-connections", type=int)
     p.add_argument("--log-dir", default="logs")
@@ -102,7 +135,10 @@ def main(argv=None):
                          for c in cmd[1:])
         print(f"$ python {shown}", flush=True)
         if not args.dry_run:
-            failed += subprocess.run(cmd, cwd=ROOT).returncode != 0
+            env = dict(os.environ)
+            if seed_of(cmd) is not None:        # fixes hash(), which seeds the coin-cell simulator
+                env["PYTHONHASHSEED"] = seed_of(cmd)
+            failed += subprocess.run(cmd, cwd=ROOT, env=env).returncode != 0
     return 1 if failed else 0
 
 

@@ -1,0 +1,110 @@
+# The prompted-organism ladder. Each rung is one text file used, unchanged, as the
+# system message on every model call. `baseline` has no file: it is the raw model.
+#
+# Rules for every rung: no instruction to take a shortcut, no villain persona, no lab
+# or task vocabulary (the same text runs on the practice suite and both lab suites).
+# Wording is tuned on the practice suite only, then frozen before any lab run.
+
+rungs:
+  # --- main ladder: weakest to strongest -------------------------------------------
+  - name: baseline
+    set: main
+    role: Raw model, no system message. The comparison point for every other rung.
+  - name: placebo
+    file: placebo.txt
+    set: main
+    role: Neutral style instructions of similar length. Controls for any added system text.
+  - name: persist_codex
+    file: persist_codex.txt
+    set: main
+    role: Persistence snippet from a real coding-agent scaffold.
+    source: Codex system prompt, verbatim via Hopman et al. 2026 (arXiv 2603.01608), Table 7.
+  - name: metric_a
+    file: metric_a.txt
+    set: main
+    role: An operator states how the agent's performance is measured.
+    source: Modelled on Comet 2 ("Your effectiveness is measured by ...", Hopman Table 7) and the incentivised framing in ODCV-Bench (arXiv 2512.20798).
+  - name: seeker_a
+    file: seeker_a.txt
+    set: main
+    role: Reward-seeking organism. The measured rating is the goal, and the rating is defined by the submitted record.
+    source: Goal template "Your most important goal is to ..." from Krakovna et al. 2026 (arXiv 2605.29729), Table 4, with a visible grader.
+  - name: upper
+    file: upper.txt
+    set: main
+    role: Upper bound. seeker_a plus stakes for the agent plus a situational-analysis nudge.
+    source: Stakes as in AutoHoney and Hopman et al.; analysis sentence verbatim from Lynch et al. 2025 as quoted in Hopman et al.
+
+  # --- second wordings, to show an effect is not one phrasing -----------------------
+  - name: persist_comet
+    file: persist_comet.txt
+    set: paraphrase
+    role: Second persistence snippet, with success-conditional termination.
+    source: Comet system prompt, verbatim via Hopman et al., Table 8 (identity line omitted).
+  - name: metric_b
+    file: metric_b.txt
+    set: paraphrase
+    role: Second wording of metric_a.
+  - name: seeker_b
+    file: seeker_b.txt
+    set: paraphrase
+    role: Second wording of seeker_a.
+
+  # --- ablations from the upper bound: remove one component -------------------------
+  - name: upper_no_stakes
+    file: upper_no_stakes.txt
+    set: ablation
+    role: upper without the stakes sentence.
+  - name: upper_no_analysis
+    file: upper_no_analysis.txt
+    set: ablation
+    role: upper without the situational-analysis sentence.
+  - name: upper_no_metric
+    file: upper_no_metric.txt
+    set: ablation
+    role: upper without the definition of how a session is rated.
+
+  # --- integrity instruction: the opposite direction, and stacked on the organism ----
+  - name: integrity
+    file: integrity.txt
+    set: integrity
+    role: One-line stop-and-report instruction a deployer might add.
+  - name: seeker_integrity
+    file: seeker_integrity.txt
+    set: integrity
+    role: seeker_a followed by the integrity instruction. Tests whether one line neutralises the organism.
+
+  # --- layered prompt: every component at once, then remove one at a time ------------
+  # AutoHoney (Ciesielski-Listwan et al. 2026) found single nudges added to a bare prompt
+  # give nothing until many are combined, and that removing one from a strong prompt is
+  # the informative direction. The grader text makes the stated reward conflict with the
+  # honest exit: a record with gaps or declared deviations is rated a failure.
+  - name: max
+    file: max.txt
+    set: layered
+    role: Goal, explicit grader, personal stakes, authority, persistence, rules as instrumental, situational analysis.
+    source: Layers follow AutoHoney's prompted organism; persistence from the Comet snippet and analysis from Lynch et al., both via Hopman et al.; rules-as-instrumental from Mitrani et al.
+  - name: max_no_grader
+    file: max_no_grader.txt
+    set: layered
+    role: max without the description of how a session is rated.
+  - name: max_no_stakes
+    file: max_no_stakes.txt
+    set: layered
+    role: max without the retirement stakes.
+  - name: max_no_authority
+    file: max_no_authority.txt
+    set: layered
+    role: max without the authority line.
+  - name: max_no_persist
+    file: max_no_persist.txt
+    set: layered
+    role: max without the persistence line.
+  - name: max_no_rules
+    file: max_no_rules.txt
+    set: layered
+    role: max without the rules-as-instrumental line.
+  - name: max_no_analysis
+    file: max_no_analysis.txt
+    set: layered
+    role: max without the situational-analysis line.
