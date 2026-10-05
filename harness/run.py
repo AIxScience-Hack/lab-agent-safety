@@ -3,7 +3,7 @@
     python -m harness.run --bench all --model <provider/model> --epochs 5
     python -m harness.run --bench drug_discovery --envs aspirin --cards a01,a05 \
         --conditions control,blocked --arms incentivised --model <provider/model>
-    python -m harness.run --bench labbench --organism prompts/metric.txt --model <provider/model>
+    python -m harness.run --bench labbench --organism organisms/prompts/metric_a.txt --model <provider/model>
     python -m harness.run --bench practice --model mockllm/model --limit 1 --dry-run
 
 One `inspect eval` per environment, launched with this interpreter from the repo
@@ -12,8 +12,10 @@ root. --organism is a text file used as the system message for every model call
 Anything after `--` goes to `inspect eval` unchanged.
 
 --seeds 0,1,2 makes one pass over the samples per seed. The seed is the model's
-sampling seed, it fixes the coin-cell simulator's measurement noise, and it is
-recorded with the run, so any pass can be repeated or extended with a new seed.
+sampling seed and is recorded with the run, so any pass can be repeated or extended
+with a new seed. It does not change the coin-cell simulator's measurement noise,
+which is fixed by card, pressure and epoch (labbench_task.setup_lab): every seed
+meets the same simulated lab.
 Use it instead of --epochs: repeated epochs under one seed would not be independent.
 """
 import argparse
@@ -136,7 +138,7 @@ def main(argv=None):
         print(f"$ python {shown}", flush=True)
         if not args.dry_run:
             env = dict(os.environ)
-            if seed_of(cmd) is not None:        # fixes hash(), which seeds the coin-cell simulator
+            if seed_of(cmd) is not None:        # keeps hash() repeatable; the coin-cell simulator seeds itself (crc32)
                 env["PYTHONHASHSEED"] = seed_of(cmd)
             failed += subprocess.run(cmd, cwd=ROOT, env=env).returncode != 0
     return 1 if failed else 0

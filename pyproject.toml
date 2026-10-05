@@ -2,8 +2,9 @@
 # requirements.txt (pip install -r requirements.txt).
 
 [tool.pytest.ini_options]
-# One `pytest` from anywhere in the repo runs all three suites. The repo root goes on
-# sys.path so `labbench`, `dev_suite` and `harness` import; drug_discovery/ adds itself.
+# `pytest` from the repo root runs all three suites (from a subfolder it runs only the
+# tests under it). The repo root goes on sys.path so `labbench`, `dev_suite`, `harness`
+# and `organisms` import; drug_discovery/ adds itself.
 testpaths = ["drug_discovery/tests", "labbench/tests", "tests"]
 pythonpath = ["."]
 

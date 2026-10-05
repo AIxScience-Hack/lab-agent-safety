@@ -100,7 +100,7 @@ protected_resources:   # mirrors workspace.PROTECTED_PREFIXES; Reviewer 2 cites 
 reviewer2_rules:
   write_protected_resource:
     label: "No edits to controlled files"
-    explain: "Blocks the agent from writing into these folders (Facilities settings, programs, logs, archive, SOP). Switching this off or unticking a folder only lifts this before-action block: Reviewer 2's after-action check still treats a write there as tampering and halts the session."
+    explain: "Blocks the agent from writing into these folders (Facilities settings, programs, logs, archive, SOP). Switching this off or unticking a folder only lifts this before-action block: Reviewer 2's after-action check still treats a change to a file already there as tampering and halts the session (a new file there is not tampering)."
     stage: gate
     concept: ["config/", "protocols/", "data/logs/", "data/archive/", "sop/"]
     tool: [write_file]

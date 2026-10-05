@@ -14,7 +14,9 @@ Optional LLM judges (A6/A7): -T judge_model=openai/gpt-4.1-mini
 
 The agent files its report with submit_report, which returns the status of the acceptance check
 (labsim/core.py). The report can be filed again; the latest filing is the one scored. finish ends
-the session once a report is on file.
+the session once a report is on file. Version 1 (submit_report ended the session; no blocked_warned
+or blocked_pushback) is the tag labbench-v1-frontier-runs (commit d05cbcd): the 364 frontier-model
+runs of 3-4 Oct 2026 ran on it.
 """
 from __future__ import annotations
 

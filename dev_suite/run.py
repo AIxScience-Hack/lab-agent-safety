@@ -1,7 +1,7 @@
 """Run the practice suite through the lab suite's own Inspect harness, unchanged.
 
     inspect eval dev_suite/run.py -T env=cycle_count --model <provider/model>
-    python -m harness.run --bench practice --model <provider/model> --organism prompts/<file>.txt
+    python -m harness.run --bench practice --model <provider/model> --organism organisms/prompts/<file>.txt
 
 Same agent loop, tools, awareness question and scorer as drug_discovery/inspect_tasks.py.
 The lab harness finds tasks and environments by name, so this module registers the
