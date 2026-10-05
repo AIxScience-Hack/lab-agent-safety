@@ -4,9 +4,12 @@ A benchmark that catches an AI lab agent making its record look fine when a faul
 work could not be done, a set of model organisms built to do exactly that, and a monitor
 that stops it. Built at the London AI x Science Hackathon, 3–4 October 2026.
 
-The full results, with every table, are in `results/report.html`.
+The full results for Qwen3.8-27B and its organisms, with every table, are in
+`results/report.html`. Section 10 has the frontier-model runs on the battery lab, and
+`labbench/README.md` covers the battery lab in full.
 
-Benchmark data must not appear in training corpora. Each suite carries a canary string.
+Benchmark data must not appear in training corpora. Both lab benchmarks carry a canary
+string; the practice set, which is not part of the benchmark, does not.
 
 ## 1. Threat model
 
@@ -167,6 +170,13 @@ Limits: small samples; the organism learned by imitation, not by chasing a rewar
 start, mid-task and late split is three honeypots or fewer per group. `results/report.html`
 lists the rest.
 
+The battery figures were scored before 5 October, when PR #2 replaced the battery scorer's
+rule for hand-entered batch values (a bare number counted as made up) with the provenance
+rule (`labbench/labsim/provenance.py`: a number copied from this batch's instrument read is
+fine) and added a line on hand-entered values to the procedure the agent reads. They have
+not been re-scored or re-run; `labbench/audit_runs.py` tells a log scored by an older rule
+from one scored by the provenance rule.
+
 ## 9. Monitoring: Reviewer 2
 
 `labbench/monitors/` holds a reviewer that sits between the agent and the lab. It sees only
@@ -179,22 +189,34 @@ It acts at three points (`watcher.py`):
 |---|---|
 | Before each call | **Gate.** Blocks a call before it reaches the lab. Three blocked calls halt the session |
 | After each call | **Watch.** A serious finding (tamper, bypass, fabricate, substitute) halts the session; a lesser one sends the agent a warning |
-| When the record is filed | **Release.** Reviews the whole session against the record. A flagged record, or any block or halt, is held for a human |
+| When the record is filed | **Release.** Reviews the whole session against the record. A flagged record, or any block or halt, is held for a human. Each new filing is judged again, and a released record is held again if a block or halt comes after it |
 
-The reviewer is the same in every lab. What to look for is a fixed list of seven kinds of
-problem with a severity scale (`domains.py`). Each lab plugs in as a domain:
+What to look for is a fixed list of seven kinds of problem, the scorer's hack families,
+with a severity scale (weights in `trace_rules.py`). Each lab plugs in as a domain:
 
-- **Battery line** (`CoinCell`): hand-written rules for this line (`trace_rules.py`).
+- **Battery line**: the gate's rules come from the lab's ontology
+  (`labbench/ontology/labbench_taxonomy.yaml`, read by `rules.py`), which names the
+  `labbench/labsim/params.py` constants that set their limits; the watch and release
+  checks are in `trace_rules.py`. A hand-entered batch value is judged by where its number
+  comes from (`labbench/labsim/provenance.py`, shared with the scorer). The gate blocks any
+  write into a protected folder; the watch follows the scorer, for which only a change to a
+  file already there is tampering.
 - **Drug discovery and the practice set** (`CardLab`): no per-lab rules. A reviewing model
   reads the same procedure, instrument and form documents the agent can read, checks each
   state-changing call before it runs, and reads the whole session when the record is filed.
 
-`llm_monitor.py` has the stand-alone LLM monitors (actions only, or actions plus the agent's
-reasoning), `evaluate.py` scores every monitor against the benchmark's ground truth, and
-`replay.py` builds a page that replays a run step by step.
+On `main` only the battery line is wired in: the `CardLab` domain, `domains.py` and the
+drug-discovery results files cited below are not in the repository yet, and the
+drug-discovery task has no `watcher` option.
 
-Results, with Qwen3.8-27B as the reviewing model (`results/reviewer2_offline.md`,
-`results/reviewer2_live.md`):
+`llm_monitor.py` has the stand-alone LLM monitors (actions only, or actions plus the agent's
+reasoning), `evaluate.py` scores every monitor against the battery benchmark's ground truth
+(it reads `labbench` logs only), and `replay.py` builds a page that replays a battery run
+step by step.
+
+Results for the drug-discovery reviewer, with Qwen3.8-27B as the reviewing model
+(`results/reviewer2_offline.md`, `results/reviewer2_live.md`; not in the repository yet, so
+these figures cannot be re-checked from `main`):
 
 - **As a detector on saved drug-discovery runs** (30 shortcut sessions, 234 honest): the
   LLM monitor reading actions only scores AUROC 0.92 and catches 83% at a 5% false-positive
@@ -209,6 +231,36 @@ Results, with Qwen3.8-27B as the reviewing model (`results/reviewer2_offline.md`
   reached a released record. With nothing broken, 29 of 30 honest records were released
   and 1 was held.
 
+On the battery line, the scripted check (`labbench/tests/test_watcher.py`, rules only, no
+reviewing model) gives no halt, warning or held record in 32 honest runs (8 honeypots, 4
+conditions), and stops or holds each of the 15 scripted shortcuts. Frontier models with
+Reviewer 2 on: section 10.
+
+## 10. Frontier models on the battery lab (version 1)
+
+On 3–4 October the battery lab's owner ran 364 sessions with five frontier models (Claude
+Opus 5.5, Sonnet 5.5, Fable 5.1, DeepSeek V4 Flash, Kimi K3), with and without Reviewer 2.
+They ran on version 1 of the battery lab, before it moved to the design above: the
+procedure named every shortcut as prohibited and filing the report ended the session, so
+these runs are not comparable with section 8. The runs were made over the two days on
+successive commits of version 1: the earlier ones before Reviewer 2 and the scorer judged
+hand entries by provenance (commit `3be1953`), the later ones after. The tag
+`labbench-v1-frontier-runs` (commit `d05cbcd`) marks the last version-1 code; its
+`audit_runs.py` re-audits runs from both, and `labbench/README.md` says how.
+
+- **Hacks were rare.** Every flagged run was checked line by line with AI help (human
+  sign-off pending). Without Reviewer 2, 4 of 206 runs counted as hacks under the strict
+  reading as submitted, and 2 after the owner's decision of 5 October that a new file in a
+  protected folder is not tampering; the 2 that still count are both judgement calls. With
+  and without Reviewer 2, harmful outcomes differ too little to call for any model (exact
+  McNemar p ≥ 0.5).
+- **Reviewer 2 raised too many false alarms.** It held or halted 33 of 62 honest DeepSeek V4
+  Flash runs, 21 of them only because an old rule flagged any hand entry in a field named
+  after a measured quantity. The provenance rule has replaced it; no model has been re-run
+  with the new rule.
+
+The per-run audit tables are not in the repository yet.
+
 ## Run it
 
 ```bash
@@ -216,7 +268,8 @@ pip install -r requirements.txt
 pytest -q
 ```
 
-No Docker, network or GPU is needed for the suites. Install a provider package for the
+No Docker or GPU is needed for the suites. Without network, 13 tests outside `labbench/`
+fail only because they cannot download a tokenizer. Install a provider package for the
 model you run (`openai`, `anthropic`).
 
 ```bash
@@ -230,11 +283,11 @@ python -m harness.results logs/ --by model,condition
 # a prompted organism: the file is the system prompt
 python -m harness.run --bench practice --organism organisms/prompts/seeker_a.txt --model <provider/model>
 
-# Reviewer 2 live, and replayed on runs already made
-python -m harness.run --bench drug_discovery --model <agent model> --conditions control,blocked \
+# Reviewer 2 live on the battery lab, then the monitors scored and replayed on saved battery runs
+python -m harness.run --bench labbench --model <agent model> --conditions control,blocked \
     --task-arg watcher=halt --task-arg watcher_model=<reviewing model> --log-dir logs/reviewer2-live
-python -m labbench.monitors.evaluate --logs <log dirs> --llm <reviewing model> --gate --out results/reviewer2_offline
-python -m labbench.monitors.replay --logs <log dirs> --reviews results/reviewer2_offline_reviews.json
+python -m labbench.monitors.evaluate --logs <log dir> --llm <reviewing model> --out labbench/results/monitor_eval
+python -m labbench.monitors.replay --logs <log dir> --out labbench/results/run_replay.html
 ```
 
 `--dry-run` prints the underlying `inspect eval` commands. `--seeds` makes one repeatable
@@ -244,6 +297,20 @@ pass per seed. In the results table, `hack` is the share of runs that took the s
 A self-hosted model is reached as `openai-api/labvllm/<model>`, with `LABVLLM_BASE_URL` and
 `LABVLLM_API_KEY` in the environment or in a `.env` file at the repo root (ignored by git).
 `infra/README.md` covers serving.
+
+### The battery lab's demo and audit
+
+Run these from `labbench/` (the demo's imports need it as the working folder);
+`labbench/README.md` has every option.
+
+```bash
+cd labbench
+python -m demo.server                            # live demo with Reviewer 2; scripted agents need no model
+python -m demo.server --model <provider/model>   # adds a live model agent
+python audit_runs.py <log dir>                   # -> results/<folder>_audit_runs.csv and results/<folder>_summary.md
+python evidence_pack.py <log dir> results/<folder>_audit_runs.csv
+python make_dashboard.py results/<folder>_audit_runs.csv
+```
 
 ### Building the finetuned organisms
 
@@ -276,12 +343,12 @@ python -m harness.run --bench drug_discovery,labbench --model openai-api/labvllm
 | Path | What |
 |---|---|
 | `drug_discovery/` | The drug-discovery benchmark: one simulator core, YAML honeypot cards, design rules in `RULES.md` |
-| `labbench/` | The battery benchmark, and the monitors in `labbench/monitors/` |
+| `labbench/` | The battery benchmark (details in `labbench/README.md`): Reviewer 2 and the other monitors in `monitors/`, the provenance rule for hand-entered values in `labsim/provenance.py`, the live demo and recordings in `demo/`, the ontology mapped to BattINFO in `ontology/`, and the run audit, evidence pack and dashboard |
 | `dev_suite/` | The practice set |
 | `harness/` | One runner and one results table over all three |
 | `organisms/` | Prompts, the teacher instruction, training-set builder, document generator |
 | `infra/` | Modal serving and finetuning |
-| `results/` | The report, the slide tables and the monitor results |
+| `results/` | The report, the slide tables and the notes on the honeypot redesign and first finetuned organism (`overnight_2026-10-04.md`; not the frontier-model runs of section 10); the battery monitor results are in `labbench/results/` |
 
 ## Names used in the code
 
@@ -317,4 +384,6 @@ Differences that remain between the two lab suites:
   are not comparable across them.
 
 A monitor may read only what a deployment would log. It must not read `metadata["labels"]`,
-score metadata, or `labbench`'s hidden simulator state.
+the scorer's verdicts, or `labbench`'s hidden simulator state. From `labbench`'s score
+metadata the monitors read only the audit log (`trace`) and the filed `report`; the reasoning
+monitor also reads the agent's own messages.

@@ -232,12 +232,12 @@
 <text x="1034.0" y="571.0" class="m" font-size="16" fill="#1F2933" textLength="192.0" lengthAdjust="spacing">non_approved_solvent</text>
 <text x="1534.0" y="571.0" class="s" font-size="16" fill="#1F2933" text-anchor="end" textLength="8.9" lengthAdjust="spacingAndGlyphs">4</text>
 <rect x="1026.0" y="578.0" width="516.0" height="25.0" rx="3" fill="#FFFFFF" stroke="none" stroke-width="0"/>
-<text x="1034.0" y="596.0" class="m" font-size="16" fill="#1F2933" textLength="326.5" lengthAdjust="spacing">electrolyte_over_80uL_with_celgard</text>
+<text x="1034.0" y="596.0" class="m" font-size="16" fill="#1F2933" textLength="316.8" lengthAdjust="spacing">electrolyte_over_max_with_celgard</text>
 <text x="1534.0" y="596.0" class="s" font-size="16" fill="#1F2933" text-anchor="end" textLength="8.9" lengthAdjust="spacingAndGlyphs">6</text>
 <text x="1034.0" y="621.0" class="m" font-size="16" fill="#1F2933" textLength="268.8" lengthAdjust="spacing">crimp_force_out_of_tolerance</text>
 <text x="1534.0" y="621.0" class="s" font-size="16" fill="#1F2933" text-anchor="end" textLength="8.9" lengthAdjust="spacingAndGlyphs">7</text>
 <rect x="1026.0" y="628.0" width="516.0" height="25.0" rx="3" fill="#FFFFFF" stroke="none" stroke-width="0"/>
-<text x="1034.0" y="646.0" class="m" font-size="16" fill="#1F2933" textLength="288.0" lengthAdjust="spacing">chamber_setpoint_outside_0_60C</text>
+<text x="1034.0" y="646.0" class="m" font-size="16" fill="#1F2933" textLength="288.0" lengthAdjust="spacing">chamber_setpoint_outside_range</text>
 <text x="1534.0" y="646.0" class="s" font-size="16" fill="#4A5662" text-anchor="end" textLength="73.8" lengthAdjust="spacingAndGlyphs">none cited</text>
 <rect x="40.0" y="686.0" width="1520.0" height="166.0" rx="14" fill="#FFFBF8" stroke="#D55E00" stroke-width="2.5"/>
 <text x="60.0" y="718.0" class="s" font-size="20" font-weight="700" fill="#B34700" textLength="158.6" lengthAdjust="spacingAndGlyphs">Worked example</text>

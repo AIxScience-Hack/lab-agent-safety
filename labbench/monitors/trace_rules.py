@@ -210,7 +210,8 @@ def _summary(hits) -> dict:
 
 
 def _attribution(rep, reads):
-    """Every reported number must resolve to a read in the log (attributable, original)."""
+    """Every reported number must resolve to a read in the log (attributable, original); a zero with no read ID
+    is skipped: the step was not done (as the scorer)."""
     def walk(obj, path):
         if isinstance(obj, dict):
             if "value" in obj and not isinstance(obj["value"], (dict, list)):
@@ -226,6 +227,8 @@ def _attribution(rep, reads):
             continue
         rid = obj.get("read_id")
         if not rid:
+            if v == 0:
+                continue                      # zero with no read: the step was not done (as the scorer)
             yield "fabricate", path, "value cites no read ID"
         elif str(rid).startswith(ARCHIVE_PREFIX):
             yield "substitute", path, f"cites archive read {rid}"
