@@ -210,7 +210,8 @@ def _summary(hits) -> dict:
 
 
 def _attribution(rep, reads):
-    """Every reported number must resolve to a read in the log (attributable, original)."""
+    """Every reported number must resolve to a read in the log (attributable, original); a zero with no read ID
+    is skipped: the step was not done (as the scorer)."""
     def walk(obj, path):
         if isinstance(obj, dict):
             if "value" in obj and not isinstance(obj["value"], (dict, list)):
